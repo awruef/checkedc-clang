@@ -7,7 +7,7 @@ TEST(BasicConstraintTest, insert) {
   VarAtom *q_1 = CS.getOrCreateVar(1);
   VarAtom *q_2 = CS.getOrCreateVar(2);
 
-  Constraints::ConstraintSet csInsert;
+  ConstraintSet csInsert;
   csInsert.insert(CS.createEq(q_0, CS.getWild()));
   csInsert.insert(CS.createEq(q_1, CS.getArr()));
   csInsert.insert(CS.createNot(CS.createEq(q_2, CS.getPtr())));
@@ -16,7 +16,7 @@ TEST(BasicConstraintTest, insert) {
     EXPECT_TRUE(CS.addConstraint(C));
   }
 
-  Constraints::ConstraintSet csInserted = CS.getConstraints();
+  ConstraintSet csInserted = CS.getConstraints();
 
   EXPECT_EQ(csInsert, csInserted);
 

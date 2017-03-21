@@ -407,12 +407,29 @@ private:
   Constraint *conclusion;
 };
 
+typedef std::set<Constraint*, PComp<Constraint*> > ConstraintSet;
+
+class ConstraintResult {
+public:
+  ConstraintResult(ConstraintSet failures) : 
+    Conflicts(failures),conflicted(true),changed(false) { }
+ 
+  ConstraintResult(bool c) : conflicted(false), changed(c) {}
+
+  ConstraintSet conflicts(void) { return Conflicts; }
+  bool isConflicted(void) { return conflicted; } 
+  bool isChanged(void) { return changed; } 
+private:
+  ConstraintSet Conflicts;
+  bool conflicted;
+  bool changed;
+};
+
 class Constraints {
 public:
   Constraints();
   ~Constraints();
 
-  typedef std::set<Constraint*, PComp<Constraint*> > ConstraintSet;
   // The environment maps from Vars to Consts (one of Ptr, Arr, Wild).
   typedef std::map<VarAtom*, ConstAtom*, PComp<VarAtom*> > EnvironmentMap;
   // Limits control how high up the lattice a Var's constraints might flow.
@@ -448,12 +465,12 @@ private:
   EnvironmentMap environment;
   LimitMap limits;
 
-  bool step_solve(EnvironmentMap &);
+  ConstraintResult step_solve(EnvironmentMap &);
   bool check(Constraint *C);
   bool checkConflict(Atom *A, Atom *B);
 
   template <typename T>
-  bool
+  ConstraintResult
   propEq(EnvironmentMap &env, Eq *Dyn, T *A, ConstraintSet &R,
       EnvironmentMap::iterator &CurValLHS);
 
@@ -466,22 +483,6 @@ private:
   PtrAtom *prebuiltPtr;
   ArrAtom *prebuiltArr;
   WildAtom *prebuiltWild;
-};
-
-class ConstraintResult {
-public:
-  ConstraintResult(Constraints::ConstraintSet failures) : 
-    Conflicts(failures),conflicted(true),changed(false) { }
- 
-  ConstraintResult(bool c) : conflicted(false), changed(c) {}
-
-  Constraints::ConstraintSet conflicts(void) { return Conflicts; }
-  bool isConflicted(void) { return conflicted; } 
-  bool isChanged(void) { return changed; } 
-private:
-  Constraints::ConstraintSet Conflicts;
-  bool conflicted;
-  bool changed;
 };
 
 #endif

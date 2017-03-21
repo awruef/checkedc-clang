@@ -103,6 +103,40 @@ bool Constraints::check(Constraint *C) {
   return true;
 }
 
+// Given an atom A and B, checks to see if _A_ is a _VarAtom_ and 
+// if the current value of _A_ is constrained
+// by a negation, and if constraining _A_ to _B_ would break that constraint.
+bool Constraints::checkConflict(Atom *A, Atom *B) {
+  if (VarAtom *V = dyn_cast<VarAtom>(A)) {
+    ConstAtom *val = nullptr;
+    if (ConstAtom *C = dyn_cast<ConstAtom>(B)) {
+      val = C;
+    } else if(VarAtom *V2 = dyn_cast<VarAtom>(B)) {
+      val = environment[V2];
+    } else {
+      llvm_unreachable("invalid");
+    }
+
+    LimitMap::iterator I = limits.find(V); 
+    if (I != limits.end()) {
+      ConstAtom *Limited = I->second; 
+      // val has to be less than or equal to Limited. If it isn't, then
+      // this proposed substitution would break a constraint imposed
+      // by a negation.
+      if (*val < *Limited || *val == *Limited) {
+        return true;
+      } else {
+        return false;
+      }
+    } else {
+      // V has no limits, this assignment is good. 
+      return true;
+    }
+  } else {
+    return true;
+  }
+}
+
 // Given an equality constraint _Dyn_, and a current variable binding 
 // _CurValLHS_, where _CurValLHS_ represents the pair (q_i:C) and the
 // equality constraint _Dyn_ := q_i == K, pattern match over K. It 
@@ -116,16 +150,21 @@ bool Constraints::check(Constraint *C) {
 // Return true if propEq modified the binding of (q_i:C) or the binding
 // of (q_j:K) if _Dyn_ was of the form q_i == q_k.
 template <typename T>
-bool
+ConstraintResult
 Constraints::propEq(EnvironmentMap &env, Eq *Dyn, T *A, ConstraintSet &R,
   EnvironmentMap::iterator &CurValLHS) {
   bool changedEnvironment = false;
 
   if (isa<T>(Dyn->getRHS())) {
     if (*(CurValLHS->second) < *A) {
-      CurValLHS->second = A;
-      R.insert(Dyn);
-      changedEnvironment = true;
+      if( checkConflict(CurValLHS->first, A) ) {
+        CurValLHS->second = A;
+        R.insert(Dyn);
+        changedEnvironment = true;
+      } else {
+        // There was a conflict, throw an exception. 
+        ConstraintSet conflicts;
+      }
     }
   } // Also propagate from equality when v = v'.
   else if (VarAtom *RHSVar = dyn_cast<VarAtom>(Dyn->getRHS())) {
@@ -133,18 +172,26 @@ Constraints::propEq(EnvironmentMap &env, Eq *Dyn, T *A, ConstraintSet &R,
     assert(CurValRHS != env.end()); // The var on the RHS should be in the env.
 
     if (*(CurValLHS->second) < *(CurValRHS->second)) {
-      CurValLHS->second = CurValRHS->second;
-      changedEnvironment = true;
+      if (checkConflict(CurValLHS->first, CurValRHS->second) ) {
+        CurValLHS->second = CurValRHS->second;
+        changedEnvironment = true;
+      } else {
+        // There was a conflict, throw an exception. 
+      }
     }
     else if (*(CurValRHS->second) < *(CurValLHS->second)) {
-      CurValRHS->second = CurValLHS->second;
-      changedEnvironment = true;
+      if (checkConflict(CurValRHS->first, CurValLHS->second) ) {
+        CurValRHS->second = CurValLHS->second;
+        changedEnvironment = true;
+      } else {
+        // There was a conflict, throw an exception.
+      }
     }
     else
       assert(*(CurValRHS->second) == *(CurValLHS->second));
   }
 
-  return changedEnvironment;
+  return ConstraintResult(changedEnvironment);
 }
 
 // Propagates implication through the environment for a single 
@@ -172,9 +219,7 @@ Constraints::propImp(Implies *Imp, T *A, ConstraintSet &R, ConstAtom *V) {
 // implications. Accepts a single parameter, _env_, that is a map of 
 // variables to their current value in the ConstAtom lattice. 
 //
-// Returns true if the step didn't change any bindings of variables in
-// the environment. 
-bool Constraints::step_solve(EnvironmentMap &env) {
+ConstraintResult Constraints::step_solve(EnvironmentMap &env) {
   bool changedEnvironment = false;
 
   EnvironmentMap::iterator VI = env.begin();
@@ -187,10 +232,15 @@ bool Constraints::step_solve(EnvironmentMap &env) {
     
     ConstraintSet rmConstraints;
     for (const auto &C : Var->Constraints) 
-      if (Eq *E = dyn_cast<Eq>(C)) 
-        changedEnvironment |= propEq<WildAtom>(env, E, getWild(), rmConstraints, VI);
-      else if (Implies *Imp = dyn_cast<Implies>(C)) 
+      if (Eq *E = dyn_cast<Eq>(C)) {
+        ConstraintResult cr = propEq<WildAtom>(env, E, getWild(), rmConstraints, VI);
+        if (cr.isConflicted()) 
+          return cr;
+        else
+          changedEnvironment |= cr.isChanged();
+      } else if (Implies *Imp = dyn_cast<Implies>(C)) {
         changedEnvironment |= propImp<WildAtom>(Imp, getWild(), rmConstraints, Val);
+      }
 
     for (const auto &RC : rmConstraints)
       Var->Constraints.erase(RC);
@@ -217,9 +267,14 @@ bool Constraints::step_solve(EnvironmentMap &env) {
               changedEnvironment = true;
             }
       }
-      else if (Eq *E = dyn_cast<Eq>(C)) 
-        changedEnvironment |= propEq<ArrAtom>(env, E, getArr(), rmConstraints, VI);
-      else if (Implies *Imp = dyn_cast<Implies>(C)) 
+      else if (Eq *E = dyn_cast<Eq>(C)) {
+        ConstraintResult cr = propEq<ArrAtom>(env, E, getArr(), rmConstraints, VI);
+        if (cr.isConflicted()) {
+          return cr;
+        } else {
+          changedEnvironment |= cr.isChanged();
+        }
+      } else if (Implies *Imp = dyn_cast<Implies>(C)) 
         changedEnvironment |= propImp<ArrAtom>(Imp, getArr(), rmConstraints, Val);
     }
 
@@ -229,12 +284,13 @@ bool Constraints::step_solve(EnvironmentMap &env) {
     ++VI;
   }
 
-  return (changedEnvironment == false);
+  return ConstraintResult(changedEnvironment);
 }
 
-std::pair<Constraints::ConstraintSet, bool> Constraints::solve(void) {
+std::pair<ConstraintSet, bool> Constraints::solve(void) {
   bool fixed = false;
-  Constraints::ConstraintSet conflicts;
+  bool result = true;
+  ConstraintSet conflicts;
 
   if (DebugSolver) {
     errs() << "constraints beginning solve\n";
@@ -252,7 +308,15 @@ std::pair<Constraints::ConstraintSet, bool> Constraints::solve(void) {
       dump();
     }
 
-    fixed = step_solve(environment);
+    ConstraintResult cr = step_solve(environment);
+
+    if (cr.isConflicted()) {
+      result = false;
+      conflicts = cr.conflicts();
+      break;
+    } else {
+      fixed = cr.isChanged();
+    }
 
     if (DebugSolver) {
       errs() << "constraints post step\n";
@@ -260,7 +324,7 @@ std::pair<Constraints::ConstraintSet, bool> Constraints::solve(void) {
     }
   }
 
-  return std::pair<Constraints::ConstraintSet, bool>(conflicts, true);
+  return std::pair<ConstraintSet, bool>(conflicts, result);
 }
 
 void Constraints::print(raw_ostream &O) const {
