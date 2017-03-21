@@ -450,6 +450,7 @@ private:
 
   bool step_solve(EnvironmentMap &);
   bool check(Constraint *C);
+  bool checkConflict(Atom *A, Atom *B);
 
   template <typename T>
   bool
@@ -467,31 +468,20 @@ private:
   WildAtom *prebuiltWild;
 };
 
-class ConstraintFailure : public std::runtime_error {
+class ConstraintResult {
 public:
-  ConstraintFailure(Constraints::ConstraintSet failures) : 
-    std::runtime_error("constraints in conflict"),Conflicts(failures) { }
-  
-  virtual const char *what(void) const throw() {
-    S.str("constraints in conflict: ");
-
-    for ( auto &C : Conflicts ) {
-      std::string tmp = "";
-      llvm::raw_string_ostream RSO(tmp);
-      C->print(RSO);
-      S << RSO.str() << ",";
-    }
-
-    S << "}";
-
-    return S.str().c_str();
-  }
+  ConstraintResult(Constraints::ConstraintSet failures) : 
+    Conflicts(failures),conflicted(true),changed(false) { }
+ 
+  ConstraintResult(bool c) : conflicted(false), changed(c) {}
 
   Constraints::ConstraintSet conflicts(void) { return Conflicts; }
+  bool isConflicted(void) { return conflicted; } 
+  bool isChanged(void) { return changed; } 
 private:
   Constraints::ConstraintSet Conflicts;
-  static std::ostringstream S;
+  bool conflicted;
+  bool changed;
 };
-
 
 #endif
