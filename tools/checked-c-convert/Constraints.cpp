@@ -35,9 +35,19 @@ bool Constraints::addConstraint(Constraint *C) {
     }
     else if (Not *N = dyn_cast<Not>(C)) {
       if (Eq *E = dyn_cast<Eq>(N->getBody())) {
-        if (VarAtom *vLHS = dyn_cast<VarAtom>(E->getLHS()))
+        if (VarAtom *vLHS = dyn_cast<VarAtom>(E->getLHS())) {
           vLHS->Constraints.insert(C);
 
+          // Update the limits, if needed. 
+          if (ConstAtom *cRHS = dyn_cast<ConstAtom>(E->getRHS())) {
+            // Only update the limits if the new value is less than 
+            // the limited value. 
+            LimitMap::iterator I = limits.find(vLHS);
+            if (I != limits.end()) 
+              if (*cRHS < *(I->second))
+                I->second = cRHS;
+          }
+        }
       }
     }
     else if (Implies *I = dyn_cast<Implies>(C)) {

@@ -414,6 +414,8 @@ public:
   typedef std::set<Constraint*, PComp<Constraint*> > ConstraintSet;
   // The environment maps from Vars to Consts (one of Ptr, Arr, Wild).
   typedef std::map<VarAtom*, ConstAtom*, PComp<VarAtom*> > EnvironmentMap;
+  // Limits control how high up the lattice a Var's constraints might flow.
+  typedef std::map<VarAtom*, ConstAtom*,PComp<VarAtom*> > LimitMap;
 
   bool addConstraint(Constraint *c);
   // It's important to return these by reference. Programs can have 
@@ -443,6 +445,7 @@ public:
 private:
   ConstraintSet constraints;
   EnvironmentMap environment;
+  LimitMap limits;
 
   bool step_solve(EnvironmentMap &);
   bool check(Constraint *C);
