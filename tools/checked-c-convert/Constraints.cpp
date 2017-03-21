@@ -162,8 +162,8 @@ Constraints::propEq(EnvironmentMap &env, Eq *Dyn, T *A, ConstraintSet &R,
         R.insert(Dyn);
         changedEnvironment = true;
       } else {
-        // There was a conflict, throw an exception. 
         ConstraintSet conflicts;
+        return ConstraintResult(conflicts);
       }
     }
   } // Also propagate from equality when v = v'.
@@ -176,7 +176,8 @@ Constraints::propEq(EnvironmentMap &env, Eq *Dyn, T *A, ConstraintSet &R,
         CurValLHS->second = CurValRHS->second;
         changedEnvironment = true;
       } else {
-        // There was a conflict, throw an exception. 
+        ConstraintSet conflicts;
+        return ConstraintResult(conflicts);
       }
     }
     else if (*(CurValRHS->second) < *(CurValLHS->second)) {
@@ -184,7 +185,8 @@ Constraints::propEq(EnvironmentMap &env, Eq *Dyn, T *A, ConstraintSet &R,
         CurValRHS->second = CurValLHS->second;
         changedEnvironment = true;
       } else {
-        // There was a conflict, throw an exception.
+        ConstraintSet conflicts;
+        return ConstraintResult(conflicts);
       }
     }
     else
