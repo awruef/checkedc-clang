@@ -21,6 +21,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include <set>
 #include <map>
+#include <sstream>
 
 class Constraint;
 class Constraints;
@@ -465,5 +466,32 @@ private:
   ArrAtom *prebuiltArr;
   WildAtom *prebuiltWild;
 };
+
+class ConstraintFailure : public std::runtime_error {
+public:
+  ConstraintFailure(Constraints::ConstraintSet failures) : 
+    std::runtime_error("constraints in conflict"),Conflicts(failures) { }
+  
+  virtual const char *what(void) const throw() {
+    S.str("constraints in conflict: ");
+
+    for ( auto &C : Conflicts ) {
+      std::string tmp = "";
+      llvm::raw_string_ostream RSO(tmp);
+      C->print(RSO);
+      S << RSO.str() << ",";
+    }
+
+    S << "}";
+
+    return S.str().c_str();
+  }
+
+  Constraints::ConstraintSet conflicts(void) { return Conflicts; }
+private:
+  Constraints::ConstraintSet Conflicts;
+  static std::ostringstream S;
+};
+
 
 #endif
