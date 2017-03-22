@@ -286,7 +286,7 @@ ConstraintResult Constraints::step_solve(EnvironmentMap &env) {
     ++VI;
   }
 
-  return ConstraintResult(changedEnvironment);
+  return ConstraintResult(changedEnvironment == false);
 }
 
 std::pair<ConstraintSet, bool> Constraints::solve(void) {
