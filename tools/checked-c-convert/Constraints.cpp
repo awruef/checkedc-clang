@@ -23,7 +23,6 @@ static cl::opt<bool> DebugSolver("debug-solver",
 bool Constraints::addConstraint(Constraint *C) {
   // Validate the constraint to be added.
   assert(check(C));
-
   // Check if C is already in the set of constraints. 
   if (constraints.find(C) == constraints.end()) {
     constraints.insert(C);
@@ -43,9 +42,12 @@ bool Constraints::addConstraint(Constraint *C) {
             // Only update the limits if the new value is less than 
             // the limited value. 
             LimitMap::iterator I = limits.find(vLHS);
-            if (I != limits.end()) 
+            if (I != limits.end()) {
               if (*cRHS < *(I->second))
                 I->second = cRHS;
+            } else {
+              limits.insert(std::make_pair(vLHS, cRHS));
+            }
           }
         }
       }
@@ -120,9 +122,6 @@ bool Constraints::checkConflict(Atom *A, Atom *B) {
     LimitMap::iterator I = limits.find(V); 
     if (I != limits.end()) {
       ConstAtom *Limited = I->second; 
-      // val has to be less than or equal to Limited. If it isn't, then
-      // this proposed substitution would break a constraint imposed
-      // by a negation.
       if (*val < *Limited || *val == *Limited) {
         return true;
       } else {
