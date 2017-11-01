@@ -355,12 +355,7 @@ public:
           Info.getVariable(A, Context);
 
         if (i < FD->getNumParams()) {
-          ParmVarDecl *PVD = FD->getParamDecl(i);
-          std::set<ConstraintVariable*> ParameterDC =
-            Info.getVariable(PVD, Context);
-
-          // Constrain ParameterEC and ParameterDC to be equal.
-          constrainEq(ParameterEC, ParameterDC, Info);
+          constrainAssign(FD->getParamDecl(i), A);
         } else {
           // Constrain ParameterEC to wild if it is a pointer type.
           Constraints &CS = Info.getConstraints();
