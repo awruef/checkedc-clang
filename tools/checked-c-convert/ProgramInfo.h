@@ -178,9 +178,10 @@ private:
   // Name of the function or function variable. Used by mkString.
   std::string name;
   bool hasproto;
+  bool hasbody;
 public:
   FunctionVariableConstraint() : 
-    ConstraintVariable(FunctionVariable, "", ""),name(""),hasproto(false) { }
+    ConstraintVariable(FunctionVariable, "", ""),name(""),hasproto(false),hasbody(false) { }
 
   FunctionVariableConstraint(clang::DeclaratorDecl *D, uint32_t &K,
     Constraints &CS, const clang::ASTContext &C);
@@ -194,6 +195,7 @@ public:
   std::string getName() { return name; }
 
   bool hasProtoType() { return hasproto; }
+  bool hasBody() { return hasbody; }
 
   static bool classof(const ConstraintVariable *S) {
     return S->getKind() == FunctionVariable;
@@ -283,9 +285,9 @@ public:
   // Given some expression E, what is the top-most constraint variable that
   // E refers to? 
   std::set<ConstraintVariable*>
-    getVariable(clang::Expr *E, clang::ASTContext *C);
+    getVariable(clang::Expr *E, clang::ASTContext *C, bool inFunctionContext = false);
   std::set<ConstraintVariable*>
-    getVariable(clang::Decl *D, clang::ASTContext *C);
+    getVariable(clang::Decl *D, clang::ASTContext *C, bool inFunctionContext = false);
 
   VariableMap &getVarMap() { return Variables;  }
 

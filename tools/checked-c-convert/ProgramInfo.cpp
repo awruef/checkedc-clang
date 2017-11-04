@@ -301,6 +301,19 @@ FunctionVariableConstraint::FunctionVariableConstraint(const Type *Ty,
 {
   QualType returnType;
   hasproto = false;
+  hasbody = false;
+
+  if (FunctionDecl *FD = dyn_cast<FunctionDecl>(D)) {
+    // FunctionDecl::hasBody will return true if *any* declaration in the 
+    // declaration chain has a body, which is not what we want to record.
+    // We want to record if *this* declaration has a body. To do that, 
+    // we'll check if the declaration that has the body is different
+    // from the current declaration. 
+    const FunctionDecl *oFD = nullptr;
+    if (FD->hasBody(oFD) && oFD == FD) 
+      hasbody = true;
+  }
+
   if (Ty->isFunctionPointerType()) {
     // Is this a function pointer definition?
     llvm_unreachable("should not hit this case");
@@ -339,8 +352,7 @@ FunctionVariableConstraint::FunctionVariableConstraint(const Type *Ty,
     if (FT->hasReturnBounds()) 
       returnType = FT->getReturnBounds()->getType();
     hasproto = true;
-  }
-  else if (Ty->isFunctionNoProtoType()) {
+  } else if (Ty->isFunctionNoProtoType()) {
     const FunctionNoProtoType *FT = Ty->getAs<FunctionNoProtoType>();
     assert(FT != nullptr);
     returnType = FT->getReturnType();
@@ -637,25 +649,28 @@ bool ProgramInfo::link() {
         FVConstraint *P2 = *J;
 
         // Constrain the return values to be equal
-        constrainEq(P1->getReturnVars(), P2->getReturnVars(), *this);
+        // TODO: make this behavior optional?
+        if (P1->hasBody() == false && P2->hasBody() == false) {
+          constrainEq(P1->getReturnVars(), P2->getReturnVars(), *this);
 
-        // Constrain the parameters to be equal, if the parameter arity is
-        // the same. If it is not the same, constrain both to be wild.
-        if (P1->numParams() == P2->numParams()) {
-          for ( unsigned i = 0;
-                i < P1->numParams();
-                i++)
-          {
-            constrainEq(P1->getParamVar(i), P2->getParamVar(i), *this);
-          } 
+          // Constrain the parameters to be equal, if the parameter arity is
+          // the same. If it is not the same, constrain both to be wild.
+          if (P1->numParams() == P2->numParams()) {
+            for ( unsigned i = 0;
+                  i < P1->numParams();
+                  i++)
+            {
+              constrainEq(P1->getParamVar(i), P2->getParamVar(i), *this);
+            } 
 
-        } else {
-          // It could be the case that P1 or P2 is missing a prototype, in
-          // which case we don't need to constrain anything.
-          if (P1->hasProtoType() && P2->hasProtoType()) {
-            // Nope, we have no choice. Constrain everything to wild.
-            P1->constrainTo(CS, CS.getWild(), true);
-            P2->constrainTo(CS, CS.getWild(), true);
+          } else {
+            // It could be the case that P1 or P2 is missing a prototype, in
+            // which case we don't need to constrain anything.
+            if (P1->hasProtoType() && P2->hasProtoType()) {
+              // Nope, we have no choice. Constrain everything to wild.
+              P1->constrainTo(CS, CS.getWild(), true);
+              P2->constrainTo(CS, CS.getWild(), true);
+            }
           }
         }
         ++I;
@@ -1062,20 +1077,81 @@ ProgramInfo::getVariableHelper(Expr *E,
 
 // Given a decl, return the variables for the constraints of the Decl.
 std::set<ConstraintVariable*>
-ProgramInfo::getVariable(Decl *D, ASTContext *C) {
+ProgramInfo::getVariable(Decl *D, ASTContext *C, bool inFunctionContext) {
   assert(persisted == false);
   VariableMap::iterator I = Variables.find(PersistentSourceLoc::mkPSL(D, *C));
-  if (I != Variables.end()) 
+  if (I != Variables.end()) {
+    // If we are looking up a variable, and that variable is a parameter variable,
+    // then we should see if we're looking this up in the context of a function or
+    // not. If we are not, then we should find a declaration 
+    if (ParmVarDecl *PD = dyn_cast<ParmVarDecl>(D)) {
+      if (!inFunctionContext) {
+        // We need to do 2 things:
+        //  - Look up a forward declaration of the function for this parameter.
+        //  - Map 'D', which is the ith parameter of Parent, to the ith parameter
+        //    of any forward declaration.
+        //
+        // If such a forward declaration doesn't exist, then we can back off. 
+
+        const DeclContext *DC = PD->getParentFunctionOrMethod();
+        assert(DC != nullptr);
+        if(const FunctionDecl *Parent = dyn_cast<FunctionDecl>(DC)) {
+          // Check that the current function declaration doesn't have a body.
+          bool hasbody = false; 
+          const FunctionDecl *oFD = nullptr;
+          if (Parent->hasBody(oFD) && oFD == Parent)
+            hasbody = true; 
+
+          // This ParmVarDecl belongs to a method declaration that has a body,
+          // and, our caller asked for a non-method declaration variable. Let's
+          // see if we can find one by looking through the re-declarations of
+          // Parent. 
+          if (hasbody) {
+            // Let's look through all the re-declarations of Parent. 
+            const FunctionDecl *fwdDecl = nullptr;
+            for (const auto &RD : Parent->redecls()) {
+              if (RD != Parent) {
+                fwdDecl = RD;
+                break;
+              }
+            }
+
+            if (fwdDecl) {
+              // We found one! Let's figure out the index that D has in Parent,
+              // then get that decl from fwdDecl and look it up in Variables
+              // by PSL, then return it. 
+              int idx = -1;
+              
+              for (unsigned i = 0; i < Parent->getNumParams(); i++) {
+                const ParmVarDecl *tmp = Parent->getParamDecl(i);
+
+                if (tmp == D) {
+                  idx = i;
+                  break;
+                }
+              }
+
+              assert(idx >= 0);
+
+              const ParmVarDecl *otherDecl = fwdDecl->getParamDecl(idx);
+              I = Variables.find(PersistentSourceLoc::mkPSL(otherDecl, *C));
+              assert(I != Variables.end());
+            }
+          }
+        }
+      }
+    }
     return I->second;
-   else 
+  } else {
     return std::set<ConstraintVariable*>();
+  }
 }
 // Given some expression E, what is the top-most constraint variable that
 // E refers to? It could be none, in which case the returned set is empty. 
 // Otherwise, the returned setcontains the constraint variable(s) that E 
 // refers to.
 std::set<ConstraintVariable*>
-ProgramInfo::getVariable(Expr *E, ASTContext *C) {
+ProgramInfo::getVariable(Expr *E, ASTContext *C, bool inFunctionContext) {
   assert(persisted == false);
 
   // Get the constraint variables represented by this Expr
