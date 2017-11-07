@@ -96,6 +96,13 @@ enum InterfaceCase {
 InterfaceCase canInterface(ProgramInfo &P, ParmVarDecl *D, ASTContext *C) {
   FunctionDecl *Declaration = nullptr;
   FunctionDecl *Definition = nullptr;
+  FunctionDecl *tmp = cast<FunctionDecl>(D->getParentFunctionOrMethod());
+  const FunctionDecl *oFD = nullptr;
+
+  // If there is no body, then there isn't any modular reasoning to conduct.
+  if (tmp->hasBody(oFD) == false)
+    return DoNothing;
+
   // Look up the constraints on the actual declaration of P.
   // Look up the constraints on a non-declaration of P, if that exists. 
 
@@ -113,7 +120,7 @@ typedef std::pair<DeclNStmt, std::string> DAndReplace;
 // declarations to rewrite. S is passed for source-level information
 // about the current compilation unit.
 void rewrite(Rewriter &R, std::set<DAndReplace> &toRewrite, SourceManager &S,
-             ASTContext &A, std::set<FileID> &Files) {
+             ASTContext &A, std::set<FileID> &Files, ProgramInfo &Info) {
   std::set<DAndReplace> skip;
 
   for (const auto &N : toRewrite) {
@@ -153,7 +160,7 @@ void rewrite(Rewriter &R, std::set<DAndReplace> &toRewrite, SourceManager &S,
       //    mitigate it with a bounds safe interface. Here, we need to change
       //    how we re-write the parameter declaration. 
 
-      InterfaceCase constraintRelation = canInterface(PV, &A);
+      //InterfaceCase constraintRelation = canInterface(Info, PV, &A);
 
       // Is it a parameter type?
 
@@ -535,6 +542,45 @@ bool CastPlacementVisitor::VisitCallExpr(CallExpr *E) {
   return true;
 }
 
+class ParameterVisitor : public RecursiveASTVisitor<ParameterVisitor> {
+public:
+  explicit ParameterVisitor(ASTContext *C, ProgramInfo &I) 
+    : Context(C), Info(I) {}
+
+  bool VisitFunctionDecl(FunctionDecl *);
+private:
+  ASTContext *Context;
+  ProgramInfo &Info;
+};
+
+bool ParameterVisitor::VisitFunctionDecl(FunctionDecl *FD) {
+  FD->dump();
+  return true;
+}
+
+class ConstraintRefinerConsumer : public ASTConsumer {
+public:
+  explicit ConstraintRefinerConsumer(ProgramInfo &I, ASTContext *Context) 
+    : Info(I) {}
+
+  virtual void HandleTranslationUnit(ASTContext &Context) {
+    Info.enterCompilationUnit(Context);
+
+    // What we want to do here is to find ParmVarDecl's that can be replaced
+    // with bounds safe interfaces. We want to find them at the function body
+    // and then update the constraints globally. During the re-writing phase, 
+    // we'll then do the right thing globally. 
+    ParameterVisitor PV(&Context, Info);
+    for (const auto &D : Context.getTranslationUnitDecl()->decls())
+      PV.TraverseDecl(D);
+
+    Info.exitCompilationUnit();
+  }
+
+private:
+  ProgramInfo &Info;
+};
+
 class RewriteConsumer : public ASTConsumer {
 public:
   explicit RewriteConsumer(ProgramInfo &I, 
@@ -626,7 +672,7 @@ public:
       }
     }
 
-    rewrite(R, rewriteThese, Context.getSourceManager(), Context, Files);
+    rewrite(R, rewriteThese, Context.getSourceManager(), Context, Files, Info);
 
     // Output files.
     emit(R, Context, Files, InOutFiles);
@@ -748,13 +794,13 @@ int main(int argc, const char **argv) {
   ProgramInfo Info;
 
   // 1. Gather constraints.
-  std::unique_ptr<ToolAction> ConstraintTool = newFrontendActionFactoryA<
-      GenericAction<ConstraintBuilderConsumer, ProgramInfo>>(Info);
+  auto ConstraintTool = newFrontendActionFactoryA<
+    GenericAction<ConstraintBuilderConsumer, ProgramInfo>>(Info);
   
-  if (ConstraintTool)
-    Tool.run(ConstraintTool.get());
-  else
+  if (!ConstraintTool)
     llvm_unreachable("No action");
+  
+  Tool.run(ConstraintTool.get());
 
   if (!Info.link()) {
     errs() << "Linking failed!\n";
@@ -774,16 +820,24 @@ int main(int argc, const char **argv) {
   if (DumpIntermediate)
     Info.dump();
 
-  // 3. Re-write based on constraints.
-  std::unique_ptr<ToolAction> RewriteTool =
-      newFrontendActionFactoryB
-      <GenericAction2<RewriteConsumer, ProgramInfo, std::set<std::string>>>(
-          Info, inoutPaths);
-  
-  if (RewriteTool)
-    Tool.run(RewriteTool.get());
-  else
+  // 2a. Refine constraints. 
+  auto RefineTool = newFrontendActionFactoryA<
+    GenericAction<ConstraintRefinerConsumer, ProgramInfo>>(Info);
+
+  if (!RefineTool)
     llvm_unreachable("No action");
+
+  Tool.run(RefineTool.get());
+
+  // 3. Re-write based on constraints.
+  auto RewriteTool = newFrontendActionFactoryB<
+    GenericAction2<RewriteConsumer, ProgramInfo, std::set<std::string>>>
+      (Info, inoutPaths);
+  
+  if (!RewriteTool)
+    llvm_unreachable("No action");
+  
+  Tool.run(RewriteTool.get());
 
   if (DumpStats)
     Info.dump_stats(inoutPaths);
