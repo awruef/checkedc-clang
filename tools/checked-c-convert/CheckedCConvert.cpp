@@ -87,6 +87,22 @@ bool canRewrite(Rewriter &R, SourceRange &SR) {
   return SR.isValid() && (R.getRangeSize(SR) != -1);
 }
 
+enum InterfaceCase {
+  IncreaseCallers,
+  MakeBoundary,
+  DoNothing
+};
+
+InterfaceCase canInterface(ProgramInfo &P, ParmVarDecl *D, ASTContext *C) {
+  FunctionDecl *Declaration = nullptr;
+  FunctionDecl *Definition = nullptr;
+  // Look up the constraints on the actual declaration of P.
+  // Look up the constraints on a non-declaration of P, if that exists. 
+
+
+  return DoNothing;
+}
+
 typedef std::pair<Decl*, DeclStmt*> DeclNStmt;
 typedef std::pair<DeclNStmt, std::string> DAndReplace;
 
@@ -136,6 +152,8 @@ void rewrite(Rewriter &R, std::set<DAndReplace> &toRewrite, SourceManager &S,
       //    itself is safe. This is hopefully the common case, because we can 
       //    mitigate it with a bounds safe interface. Here, we need to change
       //    how we re-write the parameter declaration. 
+
+      InterfaceCase constraintRelation = canInterface(PV, &A);
 
       // Is it a parameter type?
 
