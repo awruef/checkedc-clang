@@ -151,6 +151,14 @@ PointerVariableConstraint::PointerVariableConstraint(const QualType &QT, uint32_
       CS.addConstraint(CS.createEq(CS.getOrCreateVar(V), CS.getWild()));
 }
 
+bool PVConstraint::operator<(const ConstraintVariable &Other) const {
+  return false;
+}
+
+bool PVConstraint::operator==(const ConstraintVariable &Other) const {
+  return false;
+}
+
 void PointerVariableConstraint::print(raw_ostream &O) const {
   O << "{ ";
   for (const auto &I : vars) 
@@ -373,6 +381,16 @@ FunctionVariableConstraint::FunctionVariableConstraint(const Type *Ty,
       FVC->constrainTo(CS, CS.getWild());
     }
   }
+}
+
+bool FVConstraint::operator<(const ConstraintVariable &Other) const {
+
+  return false;
+}
+
+bool FVConstraint::operator==(const ConstraintVariable &Other) const {
+
+  return false;
 }
 
 void FunctionVariableConstraint::constrainTo(Constraints &CS, ConstAtom *A, bool checkSkip) {

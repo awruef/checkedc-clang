@@ -93,6 +93,39 @@ enum InterfaceCase {
   DoNothing
 };
 
+ConstraintVariable *getHighest(std::set<ConstraintVariable*> Vs) {
+  if (Vs.size() == 0)
+    return nullptr;
+
+  ConstraintVariable *V = nullptr;
+
+  for (auto &P : Vs) {
+    if (V) {
+      if (*V < *P && !(*V == *P)) 
+        V = P;
+    } else {
+      V = P;
+    }
+  }
+
+  return V;
+}
+
+// Given a parameter, and we're trying to do a modular
+// conversion, we need to look at all of the constraint variables 
+// for all of the declarations, take their upper bound, then compare
+// those constraints to the constraints on the actual function 
+// definition. Element by element, there are a few cases:
+//
+// 1. Formal < Actual, uses of a function are safe, but the function 
+//    itself is not. Here, there is little we can do, so we should 
+//    bump the constraints on the call sites up. 
+// 2. Formal = Actual, the uses of the function and the function itself
+//    are equally safe. Here, there is nothing we need to do. 
+// 3. Formal > Actual, uses of the function are not safe, but the function
+//    itself is safe. This is hopefully the common case, because we can 
+//    mitigate it with a bounds safe interface. Here, we need to change
+//    how we re-write the parameter declaration. 
 InterfaceCase canInterface(ProgramInfo &P, ParmVarDecl *D, ASTContext *C) {
   const FunctionDecl *Declaration = nullptr;
   const FunctionDecl *Definition = nullptr;
@@ -128,12 +161,16 @@ InterfaceCase canInterface(ProgramInfo &P, ParmVarDecl *D, ASTContext *C) {
 
   // Look up the constraints on the actual declaration of P.
   auto Vs = P.getVariable(Declaration->getParamDecl(i), C);
+  auto V = getHighest(Vs);
   // Look up the constraints on a non-declaration of P, if that exists. 
   auto Us = P.getVariable(Definition->getParamDecl(i), C);
+  auto U = getHighest(Us);
 
   // Compare these constraints.
-
-  return DoNothing;
+  if (*V < *U)
+    return MakeBoundary;
+  else
+    return IncreaseCallers;
 }
 
 typedef std::pair<Decl*, DeclStmt*> DeclNStmt;
@@ -169,25 +206,6 @@ void rewrite(Rewriter &R, std::set<DAndReplace> &toRewrite, SourceManager &S,
 
     if (ParmVarDecl *PV = dyn_cast<ParmVarDecl>(D)) {
       assert(Where == NULL);
-
-      // Okay, if this is a parameter, and we're trying to do a modular
-      // conversion, we need to look at all of the constraint variables 
-      // for all of the declarations, take their upper bound, then compare
-      // those constraints to the constraints on the actual function 
-      // definition. Element by element, there are a few cases:
-      //
-      // 1. Formal < Actual, uses of a function are safe, but the function 
-      //    itself is not. Here, there is little we can do, so we should 
-      //    bump the constraints on the call sites up. 
-      // 2. Formal = Actual, the uses of the function and the function itself
-      //    are equally safe. Here, there is nothing we need to do. 
-      // 3. Formal > Actual, uses of the function are not safe, but the function
-      //    itself is safe. This is hopefully the common case, because we can 
-      //    mitigate it with a bounds safe interface. Here, we need to change
-      //    how we re-write the parameter declaration. 
-
-      //InterfaceCase constraintRelation = canInterface(Info, PV, &A);
-
       // Is it a parameter type?
 
       // First, find all the declarations of the containing function.
@@ -580,7 +598,19 @@ private:
 };
 
 bool ParameterVisitor::VisitFunctionDecl(FunctionDecl *FD) {
-  FD->dump();
+
+  for (auto &P : FD->parameters()) {
+    // Go over each parameter for this declaration and ask what we can do. 
+    switch(canInterface(Info, P, Context)) {
+      case IncreaseCallers:
+        break;
+      case MakeBoundary:
+        break;
+      case DoNothing:
+        break;
+    }
+  }
+
   return true;
 }
 

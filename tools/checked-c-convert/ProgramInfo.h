@@ -96,6 +96,9 @@ public:
   }
 
   virtual ~ConstraintVariable() {};
+
+  virtual bool operator<(const ConstraintVariable &other) const = 0;
+  virtual bool operator==(const ConstraintVariable &other) const = 0;
 };
 
 class PointerVariableConstraint;
@@ -161,6 +164,9 @@ public:
   void constrainTo(Constraints &CS, ConstAtom *C, bool checkSkip=false);
   bool anyChanges(Constraints::EnvironmentMap &E);
 
+  bool operator<(const ConstraintVariable &other) const;
+  bool operator==(const ConstraintVariable &other) const;
+
   virtual ~PointerVariableConstraint() {};
 };
 
@@ -212,6 +218,9 @@ public:
   void dump() const { print(llvm::errs()); }
   void constrainTo(Constraints &CS, ConstAtom *C, bool checkSkip=false);
   bool anyChanges(Constraints::EnvironmentMap &E);
+
+  bool operator<(const ConstraintVariable &other) const;
+  bool operator==(const ConstraintVariable &other) const;
 
   virtual ~FunctionVariableConstraint() {};
 };
