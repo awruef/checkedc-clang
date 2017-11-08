@@ -279,15 +279,15 @@ public:
   // currentVariable field of V is that constraint variable. Returns false if 
   // a constraint variable cannot be found.
   std::set<ConstraintVariable *> 
-  getVariableHelper(clang::Expr *E,std::set<ConstraintVariable *>V,
+  getVariableHelper(const clang::Expr *E,std::set<ConstraintVariable *>V,
     clang::ASTContext *C);
 
   // Given some expression E, what is the top-most constraint variable that
   // E refers to? 
   std::set<ConstraintVariable*>
-    getVariable(clang::Expr *E, clang::ASTContext *C, bool inFunctionContext = false);
+    getVariable(const clang::Expr *E, clang::ASTContext *C, bool inFunctionContext = false);
   std::set<ConstraintVariable*>
-    getVariable(clang::Decl *D, clang::ASTContext *C, bool inFunctionContext = false);
+    getVariable(const clang::Decl *D, clang::ASTContext *C, bool inFunctionContext = false);
 
   VariableMap &getVarMap() { return Variables;  }
 

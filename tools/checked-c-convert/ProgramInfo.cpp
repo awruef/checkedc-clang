@@ -933,19 +933,19 @@ bool ProgramInfo::getDeclStmtForDecl(Decl *D, DeclStmt *&St) {
 // currentVariable field of V is that constraint variable. Returns false if
 // a constraint variable cannot be found.
 std::set<ConstraintVariable *> 
-ProgramInfo::getVariableHelper(Expr *E, 
+ProgramInfo::getVariableHelper(const Expr *E, 
   std::set<ConstraintVariable *> V, ASTContext *C) {
   E = E->IgnoreParenImpCasts();
-  if (DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(E)) {
+  if (const DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(E)) {
     return getVariable(DRE->getDecl(), C);
-  } else if (MemberExpr *ME = dyn_cast<MemberExpr>(E)) {
+  } else if (const MemberExpr *ME = dyn_cast<MemberExpr>(E)) {
     return getVariable(ME->getMemberDecl(), C);
-  } else if (BinaryOperator *BO = dyn_cast<BinaryOperator>(E)) {
+  } else if (const BinaryOperator *BO = dyn_cast<BinaryOperator>(E)) {
     std::set<ConstraintVariable*> T1 = getVariableHelper(BO->getLHS(), V, C);
     std::set<ConstraintVariable*> T2 = getVariableHelper(BO->getRHS(), V, C);
     T1.insert(T2.begin(), T2.end());
     return T1;
-  } else if (ArraySubscriptExpr *AE = dyn_cast<ArraySubscriptExpr>(E)) {
+  } else if (const ArraySubscriptExpr *AE = dyn_cast<ArraySubscriptExpr>(E)) {
     // In an array subscript, we want to do something sort of similar to taking
     // the address or doing a dereference. 
     std::set<ConstraintVariable *> T = getVariableHelper(AE->getBase(), V, C);
@@ -968,7 +968,7 @@ ProgramInfo::getVariableHelper(Expr *E,
 
     T.swap(tmp);
     return T;
-  } else if (UnaryOperator *UO = dyn_cast<UnaryOperator>(E)) {
+  } else if (const UnaryOperator *UO = dyn_cast<UnaryOperator>(E)) {
     std::set<ConstraintVariable *> T = 
       getVariableHelper(UO->getSubExpr(), V, C);
    
@@ -995,18 +995,18 @@ ProgramInfo::getVariableHelper(Expr *E,
     }
 
     return T;
-  } else if (ImplicitCastExpr *IE = dyn_cast<ImplicitCastExpr>(E)) {
+  } else if (const ImplicitCastExpr *IE = dyn_cast<ImplicitCastExpr>(E)) {
     return getVariableHelper(IE->getSubExpr(), V, C);
-  } else if (ParenExpr *PE = dyn_cast<ParenExpr>(E)) {
+  } else if (const ParenExpr *PE = dyn_cast<ParenExpr>(E)) {
     return getVariableHelper(PE->getSubExpr(), V, C);
-  } else if (CallExpr *CE = dyn_cast<CallExpr>(E)) {
+  } else if (const CallExpr *CE = dyn_cast<CallExpr>(E)) {
     // Here, we need to look up the target of the call and return the
     // constraints for the return value of that function.
-    Decl *D = CE->getCalleeDecl();
+    const Decl *D = CE->getCalleeDecl();
     if (D == nullptr) {
       // There are a few reasons that we couldn't get a decl. For example,
       // the call could be done through an array subscript. 
-      Expr *CalledExpr = CE->getCallee();
+      const Expr *CalledExpr = CE->getCallee();
       std::set<ConstraintVariable*> tmp = getVariableHelper(CalledExpr, V, C);
       std::set<ConstraintVariable*> T;
 
@@ -1025,7 +1025,7 @@ ProgramInfo::getVariableHelper(Expr *E,
     assert(D != nullptr);
     // D could be a FunctionDecl, or a VarDecl, or a FieldDecl. 
     // Really it could be any DeclaratorDecl. 
-    if (DeclaratorDecl *FD = dyn_cast<DeclaratorDecl>(D)) {
+    if (const DeclaratorDecl *FD = dyn_cast<DeclaratorDecl>(D)) {
       std::set<ConstraintVariable*> CS = getVariable(FD, C);
       std::set<ConstraintVariable*> TR;
       FVConstraint *FVC = nullptr;
@@ -1059,7 +1059,7 @@ ProgramInfo::getVariableHelper(Expr *E,
       // If it ISN'T, though... what to do? How could this happen?
       llvm_unreachable("TODO");
     }
-  } else if (ConditionalOperator *CO = dyn_cast<ConditionalOperator>(E)) {
+  } else if (const ConditionalOperator *CO = dyn_cast<ConditionalOperator>(E)) {
     // Explore the three exprs individually.
     std::set<ConstraintVariable*> T;
     std::set<ConstraintVariable*> R;
@@ -1077,14 +1077,14 @@ ProgramInfo::getVariableHelper(Expr *E,
 
 // Given a decl, return the variables for the constraints of the Decl.
 std::set<ConstraintVariable*>
-ProgramInfo::getVariable(Decl *D, ASTContext *C, bool inFunctionContext) {
+ProgramInfo::getVariable(const Decl *D, ASTContext *C, bool inFunctionContext) {
   assert(persisted == false);
   VariableMap::iterator I = Variables.find(PersistentSourceLoc::mkPSL(D, *C));
   if (I != Variables.end()) {
     // If we are looking up a variable, and that variable is a parameter variable,
     // then we should see if we're looking this up in the context of a function or
     // not. If we are not, then we should find a declaration 
-    if (ParmVarDecl *PD = dyn_cast<ParmVarDecl>(D)) {
+    if (const ParmVarDecl *PD = dyn_cast<ParmVarDecl>(D)) {
       if (!inFunctionContext) {
         // We need to do 2 things:
         //  - Look up a forward declaration of the function for this parameter.
@@ -1151,7 +1151,7 @@ ProgramInfo::getVariable(Decl *D, ASTContext *C, bool inFunctionContext) {
 // Otherwise, the returned setcontains the constraint variable(s) that E 
 // refers to.
 std::set<ConstraintVariable*>
-ProgramInfo::getVariable(Expr *E, ASTContext *C, bool inFunctionContext) {
+ProgramInfo::getVariable(const Expr *E, ASTContext *C, bool inFunctionContext) {
   assert(persisted == false);
 
   // Get the constraint variables represented by this Expr

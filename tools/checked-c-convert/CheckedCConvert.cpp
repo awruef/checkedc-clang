@@ -94,18 +94,44 @@ enum InterfaceCase {
 };
 
 InterfaceCase canInterface(ProgramInfo &P, ParmVarDecl *D, ASTContext *C) {
-  FunctionDecl *Declaration = nullptr;
-  FunctionDecl *Definition = nullptr;
-  FunctionDecl *tmp = cast<FunctionDecl>(D->getParentFunctionOrMethod());
+  const FunctionDecl *Declaration = nullptr;
+  const FunctionDecl *Definition = nullptr;
+  const FunctionDecl *tmp = cast<FunctionDecl>(D->getParentFunctionOrMethod());
   const FunctionDecl *oFD = nullptr;
 
   // If there is no body, then there isn't any modular reasoning to conduct.
-  if (tmp->hasBody(oFD) == false)
+  if (tmp->hasBody(oFD) == false || tmp->isVariadic())
     return DoNothing;
+  assert(oFD != nullptr);
+
+  Definition = oFD;
+  if (oFD == tmp) {
+    // Find a declaration.  
+  } else {
+    Declaration = tmp; 
+  }
+
+  // If we can't find a declaration, then just give up. 
+  if (Declaration == nullptr)
+   return DoNothing; 
+
+  // Get the index i for D in tmp, this will also be the index for the 
+  // parameter in both Declaration and Definition.
+  int i = -1;
+  for (unsigned k = 0; k < tmp->getNumParams(); k++) {
+    if (D == tmp->getParamDecl(k)) {
+      i = k;
+      break;
+    }
+  }
+  assert(i >= 0);
 
   // Look up the constraints on the actual declaration of P.
+  auto Vs = P.getVariable(Declaration->getParamDecl(i), C);
   // Look up the constraints on a non-declaration of P, if that exists. 
+  auto Us = P.getVariable(Definition->getParamDecl(i), C);
 
+  // Compare these constraints.
 
   return DoNothing;
 }
