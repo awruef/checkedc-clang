@@ -93,7 +93,7 @@ enum InterfaceCase {
   DoNothing
 };
 
-ConstraintVariable *getHighest(std::set<ConstraintVariable*> Vs) {
+ConstraintVariable *getHighest(std::set<ConstraintVariable*> Vs, ProgramInfo &Info) {
   if (Vs.size() == 0)
     return nullptr;
 
@@ -101,7 +101,7 @@ ConstraintVariable *getHighest(std::set<ConstraintVariable*> Vs) {
 
   for (auto &P : Vs) {
     if (V) {
-      if (*V < *P && !(*V == *P)) 
+      if (V->isLt(*P, Info) && !V->isEq(*P, Info))
         V = P;
     } else {
       V = P;
@@ -161,13 +161,13 @@ InterfaceCase canInterface(ProgramInfo &P, ParmVarDecl *D, ASTContext *C) {
 
   // Look up the constraints on the actual declaration of P.
   auto Vs = P.getVariable(Declaration->getParamDecl(i), C);
-  auto V = getHighest(Vs);
+  auto V = getHighest(Vs, P);
   // Look up the constraints on a non-declaration of P, if that exists. 
   auto Us = P.getVariable(Definition->getParamDecl(i), C);
-  auto U = getHighest(Us);
+  auto U = getHighest(Us, P);
 
   // Compare these constraints.
-  if (*V < *U)
+  if (V->isLt(*U, P))
     return MakeBoundary;
   else
     return IncreaseCallers;

@@ -33,6 +33,8 @@
 #include "utils.h"
 #include "PersistentSourceLoc.h"
 
+class ProgramInfo;
+
 // Holds integers representing constraint variables, with semantics as 
 // defined in the comment at the top of the file.
 typedef std::set<uint32_t> CVars;
@@ -61,6 +63,7 @@ protected:
   // so that later on we do not introduce a spurious constraint 
   // making those variables WILD. 
   std::set<uint32_t> ConstrainedVars;
+
 public:
   ConstraintVariable(ConstraintVariableKind K, std::string T, std::string N) : 
     Kind(K),BaseType(T),Name(N) {}
@@ -97,8 +100,12 @@ public:
 
   virtual ~ConstraintVariable() {};
 
-  virtual bool operator<(const ConstraintVariable &other) const = 0;
-  virtual bool operator==(const ConstraintVariable &other) const = 0;
+  virtual bool isLt(const ConstraintVariable &other, ProgramInfo &I) const = 0;
+  virtual bool isEq(const ConstraintVariable &other, ProgramInfo &I) const = 0;
+  virtual bool liftedOnCVars(const ConstraintVariable &O, 
+      ProgramInfo &Info,
+      llvm::function_ref<bool (ConstAtom *, ConstAtom *)>) const = 0;
+ 
 };
 
 class PointerVariableConstraint;
@@ -120,7 +127,7 @@ private:
     O_Pointer,
     O_SizedArray,
     O_UnSizedArray
-  };
+  };  
   // Map from constraint variable to original type and size. 
   // If the original variable U was:
   //  * A pointer, then U -> (a,b) , a = O_Pointer, b has no meaning.
@@ -164,8 +171,11 @@ public:
   void constrainTo(Constraints &CS, ConstAtom *C, bool checkSkip=false);
   bool anyChanges(Constraints::EnvironmentMap &E);
 
-  bool operator<(const ConstraintVariable &other) const;
-  bool operator==(const ConstraintVariable &other) const;
+  bool isLt(const ConstraintVariable &other, ProgramInfo &P) const;
+  bool isEq(const ConstraintVariable &other, ProgramInfo &P) const;
+  bool liftedOnCVars(const ConstraintVariable &O, 
+      ProgramInfo &Info,
+      llvm::function_ref<bool (ConstAtom *, ConstAtom *)>) const;
 
   virtual ~PointerVariableConstraint() {};
 };
@@ -219,9 +229,12 @@ public:
   void constrainTo(Constraints &CS, ConstAtom *C, bool checkSkip=false);
   bool anyChanges(Constraints::EnvironmentMap &E);
 
-  bool operator<(const ConstraintVariable &other) const;
-  bool operator==(const ConstraintVariable &other) const;
-
+  bool isLt(const ConstraintVariable &other, ProgramInfo &P) const;
+  bool isEq(const ConstraintVariable &other, ProgramInfo &P) const;
+  bool liftedOnCVars(const ConstraintVariable &O, 
+      ProgramInfo &Info,
+      llvm::function_ref<bool (ConstAtom *, ConstAtom *)>) const;
+ 
   virtual ~FunctionVariableConstraint() {};
 };
 
