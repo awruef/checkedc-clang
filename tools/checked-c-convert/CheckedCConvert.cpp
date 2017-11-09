@@ -129,45 +129,50 @@ ConstraintVariable *getHighest(std::set<ConstraintVariable*> Vs, ProgramInfo &In
 InterfaceCase canInterface(ProgramInfo &P, ParmVarDecl *D, ASTContext *C) {
   const FunctionDecl *Declaration = nullptr;
   const FunctionDecl *Definition = nullptr;
-  const FunctionDecl *tmp = cast<FunctionDecl>(D->getParentFunctionOrMethod());
+  const FunctionDecl *FD = cast<FunctionDecl>(D->getParentFunctionOrMethod());
   const FunctionDecl *oFD = nullptr;
 
   // If there is no body, then there isn't any modular reasoning to conduct.
-  if (tmp->hasBody(oFD) == false || tmp->isVariadic())
+  if (FD->hasBody(oFD) == false || FD->isVariadic())
     return DoNothing;
   assert(oFD != nullptr);
 
   Definition = oFD;
-  if (oFD == tmp) {
+  if (oFD == FD) {
     // Find a declaration.  
+    for (const auto &tD : FD->redecls()) {
+      if (tD != Definition) {
+        Declaration = tD;
+        break;
+      }
+    }
   } else {
-    Declaration = tmp; 
+    Declaration = FD; 
   }
 
   // If we can't find a declaration, then just give up. 
   if (Declaration == nullptr)
    return DoNothing; 
 
-  // Get the index i for D in tmp, this will also be the index for the 
+  // Get the index i for D in FD, this will also be the index for the 
   // parameter in both Declaration and Definition.
   int i = -1;
-  for (unsigned k = 0; k < tmp->getNumParams(); k++) {
-    if (D == tmp->getParamDecl(k)) {
+  for (unsigned k = 0; k < FD->getNumParams(); k++) {
+    if (D == FD->getParamDecl(k)) {
       i = k;
       break;
     }
   }
   assert(i >= 0);
 
-  // Look up the constraints on the actual declaration of P.
   auto Vs = P.getVariable(Declaration->getParamDecl(i), C);
   auto V = getHighest(Vs, P);
-  // Look up the constraints on a non-declaration of P, if that exists. 
+
   auto Us = P.getVariable(Definition->getParamDecl(i), C, true);
   auto U = getHighest(Us, P);
 
   // Compare these constraints.
-  if (V->isLt(*U, P))
+  if (U->isLt(*V, P))
     return MakeBoundary;
   else
     return IncreaseCallers;
@@ -598,6 +603,11 @@ private:
 };
 
 bool ParameterVisitor::VisitFunctionDecl(FunctionDecl *FD) {
+  // Only visit the actual definition site of the function. 
+  const FunctionDecl *oFD = nullptr;
+  if (FD->hasBody(oFD) == false || FD != oFD)
+    return true;
+
   for (auto &P : FD->parameters()) {
     // Go over each parameter for this declaration and ask what we can do. 
     if (P->getType()->isPointerType()) {
