@@ -163,7 +163,7 @@ InterfaceCase canInterface(ProgramInfo &P, ParmVarDecl *D, ASTContext *C) {
   auto Vs = P.getVariable(Declaration->getParamDecl(i), C);
   auto V = getHighest(Vs, P);
   // Look up the constraints on a non-declaration of P, if that exists. 
-  auto Us = P.getVariable(Definition->getParamDecl(i), C);
+  auto Us = P.getVariable(Definition->getParamDecl(i), C, true);
   auto U = getHighest(Us, P);
 
   // Compare these constraints.
@@ -598,16 +598,17 @@ private:
 };
 
 bool ParameterVisitor::VisitFunctionDecl(FunctionDecl *FD) {
-
   for (auto &P : FD->parameters()) {
     // Go over each parameter for this declaration and ask what we can do. 
-    switch(canInterface(Info, P, Context)) {
-      case IncreaseCallers:
-        break;
-      case MakeBoundary:
-        break;
-      case DoNothing:
-        break;
+    if (P->getType()->isPointerType()) {
+      switch(canInterface(Info, P, Context)) {
+        case IncreaseCallers:
+          break;
+        case MakeBoundary:
+          break;
+        case DoNothing:
+          break;
+      }
     }
   }
 
