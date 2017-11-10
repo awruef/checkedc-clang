@@ -35,6 +35,10 @@
 
 class ProgramInfo;
 
+// Holds a pair of QualType and an optional for the BoundsExpr, if the
+// type has a Checked C bounds expression associated with it. 
+typedef std::pair<clang::QualType,llvm::Optional<const clang::BoundsExpr*>> FQType;
+
 // Holds integers representing constraint variables, with semantics as 
 // defined in the comment at the top of the file.
 typedef std::set<uint32_t> CVars;
@@ -153,7 +157,7 @@ public:
 
   // Constructor for when we only have a Type. Needs a string name
   // N for the name of the variable that this represents.
-  PointerVariableConstraint(const clang::QualType &QT, uint32_t &K,
+  PointerVariableConstraint(const FQType &QT, uint32_t &K,
 	  clang::DeclaratorDecl *D, std::string N, Constraints &CS, const clang::ASTContext &C);
 
   const CVars &getCvars() const { return vars; }

@@ -18,22 +18,21 @@ using namespace llvm;
 // Helper method to print a Type in a way that can be represented in the source.
 static
 std::string
-tyToStr(const Type *T) {
-  QualType QT(T, 0);
-
-  return QT.getAsString();
+tyToStr(const FQType &T) {
+  return T.first.getAsString();
 }
 
 PointerVariableConstraint::PointerVariableConstraint(DeclaratorDecl *D,
   uint32_t &K, Constraints &CS, const ASTContext &C) :
-  PointerVariableConstraint(D->getType(), K, D, D->getName(), CS, C) { }
+  PointerVariableConstraint(FQType(D->getType(),Optional<const BoundsExpr*>()), 
+      K, D, D->getName(), CS, C) { }
 
-PointerVariableConstraint::PointerVariableConstraint(const QualType &QT, uint32_t &K,
+PointerVariableConstraint::PointerVariableConstraint(const FQType &QT, uint32_t &K,
   DeclaratorDecl *D, std::string N, Constraints &CS, const ASTContext &C) : 
-  ConstraintVariable(ConstraintVariable::PointerVariable, 
-             tyToStr(QT.getTypePtr()),N),FV(nullptr)
+  ConstraintVariable(ConstraintVariable::PointerVariable,tyToStr(QT),N),
+    FV(nullptr)
 {
-  QualType QTy = QT;
+  QualType QTy = QT.first;
   const Type *Ty = QTy.getTypePtr();
   // If the type is a decayed type, then maybe this is the result of 
   // decaying an array to a pointer. If the original type is some 
@@ -110,7 +109,7 @@ PointerVariableConstraint::PointerVariableConstraint(const QualType &QT, uint32_
       arrSizes[K] = std::pair<OriginalArrType,uint64_t>(O_Pointer,0);
  
       K++;
-      std::string TyName = tyToStr(Ty);
+      std::string TyName = tyToStr(FQType(QTy,Optional<const BoundsExpr*>()));
       // TODO: Github issue #61: improve handling of types for
       // // variable arguments.
       if (TyName == "struct __va_list_tag *" || TyName == "va_list")
@@ -137,7 +136,7 @@ PointerVariableConstraint::PointerVariableConstraint(const QualType &QT, uint32_
     // There is possibly something more elegant to do in the code here.
     FV = new FVConstraint(Ty, K, D, (isTypedef ? "" : N), CS, C);
 
-  BaseType = tyToStr(Ty);
+  BaseType = tyToStr(FQType(QTy,Optional<const BoundsExpr*>()));
 
   if (QTy.isConstQualified()) {
     BaseType = "const " + BaseType;
@@ -348,9 +347,11 @@ FunctionVariableConstraint::FunctionVariableConstraint(DeclaratorDecl *D,
 
 FunctionVariableConstraint::FunctionVariableConstraint(const Type *Ty,
     uint32_t &K, DeclaratorDecl *D, std::string N, Constraints &CS, const ASTContext &Ctx) :
-  ConstraintVariable(ConstraintVariable::FunctionVariable, tyToStr(Ty), N),name(N)
+  ConstraintVariable(ConstraintVariable::FunctionVariable, 
+      tyToStr(FQType(QualType(Ty, 0),Optional<const BoundsExpr*>())), N),name(N)
 {
   QualType returnType;
+  FQType FQReturn;
   hasproto = false;
   hasbody = false;
 
@@ -379,12 +380,13 @@ FunctionVariableConstraint::FunctionVariableConstraint(const Type *Ty,
     // has a bounds expression associated with it, substitute the type of that
     // bounds expression for the other type. 
     for (unsigned i = 0; i < FT->getNumParams(); i++) {
-      QualType QT;
-
-      if(const BoundsExpr *BE = FT->getParamBounds(i))
-        QT = BE->getType();
+      QualType QT = FT->getParamType(i);
+      const BoundsExpr *Bounds = FT->getParamBounds(i);
+      FQType FQ;
+      if (Bounds) 
+        FQ = FQType(QT, Optional<const BoundsExpr*>(Bounds));
       else
-        QT = FT->getParamType(i);
+        FQ = FQType(QT, Optional<const BoundsExpr*>());
 
       std::string paramName = "";
       DeclaratorDecl *tmpD = D;
@@ -397,16 +399,24 @@ FunctionVariableConstraint::FunctionVariableConstraint(const Type *Ty,
       }
 
       std::set<ConstraintVariable*> C;
-      C.insert(new PVConstraint(QT, K, tmpD, paramName, CS, Ctx));
+      C.insert(new PVConstraint(FQ, K, tmpD, paramName, CS, Ctx));
       paramVars.push_back(C);
     }
-    if (FT->hasReturnBounds()) 
-      returnType = FT->getReturnBounds()->getType();
+
+    if (FT->hasReturnBounds()) {
+      const BoundsExpr *B = FT->getReturnBounds();
+      assert(B);
+      FQReturn = FQType(returnType, Optional<const BoundsExpr*>(B));
+    } else {
+      FQReturn = FQType(returnType, Optional<const BoundsExpr*>());
+    }
+
     hasproto = true;
   } else if (Ty->isFunctionNoProtoType()) {
     const FunctionNoProtoType *FT = Ty->getAs<FunctionNoProtoType>();
     assert(FT != nullptr);
     returnType = FT->getReturnType();
+    FQReturn = FQType(returnType, Optional<const BoundsExpr*>());
   } else {
     llvm_unreachable("don't know what to do");
   }
@@ -415,7 +425,7 @@ FunctionVariableConstraint::FunctionVariableConstraint(const Type *Ty,
   // as a type, then we will need the types for all the parameters and the
   // return values
 
-  returnVars.insert(new PVConstraint(returnType, K, D, "", CS, Ctx));
+  returnVars.insert(new PVConstraint(FQReturn, K, D, "", CS, Ctx));
   for ( const auto &V : returnVars) {
     if (PVConstraint *PVC = dyn_cast<PVConstraint>(V)) {
       if (PVC->getFV())

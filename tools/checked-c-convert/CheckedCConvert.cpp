@@ -560,29 +560,66 @@ bool CastPlacementVisitor::anyTop(std::set<ConstraintVariable*> C) {
   return anyTopFound;
 }
 
+// We we have two kinds of casts we can insert: 
+// - Going from a checked to unchecked type, we can use a C style cast.
+// - Going from an unchecked to a checked type, we use _Assume_bounds_cast
+// We can know when we are in a position to do one or the other by looking at
+// the constraint variables. 
 bool CastPlacementVisitor::VisitCallExpr(CallExpr *E) {
 
   // Find the target of this call. 
   if (Decl *D = E->getCalleeDecl()) {
     if (FunctionDecl *FD = dyn_cast<FunctionDecl>(D)) {
-      // Find the parameter placement for this call instruction. 
-      std::set<unsigned int> P = getParamsForExtern(FD->getName());
+      // Don't do anything if the call is variadic.
+      if (FD->isVariadic())
+        return true;
 
-      for (unsigned int i : P) {
-        // Get the constraints for the ith parameter to the call. 
-        Expr *EP = E->getArg(i)->IgnoreImpCasts();
-        std::set<ConstraintVariable*> EPC = Info.getVariable(EP, Context);
-        
-        // Get the type of the ith parameter to the call. 
-        QualType EPT = EP->getType(); 
-        QualType PTF = FD->getParamDecl(i)->getType();
+      const FunctionDecl *Declaration = nullptr;
+      const FunctionDecl *Definition = nullptr;
+      const FunctionDecl *oFD = nullptr;
 
-        // If they aren't equal, and the constraints in EPC are non-top, 
-        // insert a cast. 
-        if (EPT != PTF && !anyTop(EPC)) {
-          // Insert a cast. 
-          SourceLocation CL = EP->getExprLoc();
-          R.InsertTextBefore(CL, "("+PTF.getAsString()+")");
+      if (FD->hasBody(oFD) == false)
+        oFD = FD;
+
+      Definition = oFD;
+      Declaration = FD;
+      if (oFD == FD) {
+        for (const auto &tD : FD->redecls()) {
+          if (tD != Definition) {
+            Declaration = tD;
+            break;
+          }
+        }
+      } else {
+        Declaration = FD; 
+      }
+
+      errs() << "CastPlacementVisitor::visitCallExpr\n";
+      E->dump();
+
+      // We now have something much more principled we can do here:
+      //  - Look up the top-most ConstraintVariable for the expression, A
+      //  - Look up the top-most ConstraintVariable for the declaration, B
+      //  - Look up the top-most ConstraintVariable for the definition, C
+      //  B and C might be the same, if the function has no body.
+      for (unsigned i = 0; i < FD->getNumParams(); i++) {
+        if (E->getArg(i)->getType()->isPointerType()) {
+          auto As = Info.getVariable(E->getArg(i), Context, true);
+          auto A = getHighest(As, Info);
+          auto Bs = Info.getVariable(Declaration->getParamDecl(i), Context, false);
+          auto B = getHighest(Bs, Info);
+          auto Cs = Info.getVariable(Definition->getParamDecl(i), Context, true);
+          auto C = getHighest(Cs, Info);
+
+          assert(A != nullptr && B != nullptr && C != nullptr);
+          // Are B and C equal? If they aren't, then that means we have a bounds 
+          // interface.  
+          if (B->isEq(*C, Info)) {
+            // If they are equal, then we can just use B.
+             
+          } else {
+
+          }
         }
       }
     }
@@ -613,10 +650,13 @@ bool ParameterVisitor::VisitFunctionDecl(FunctionDecl *FD) {
     if (P->getType()->isPointerType()) {
       switch(canInterface(Info, P, Context)) {
         case IncreaseCallers:
+          // Insert casts at all the call sites.
           break;
         case MakeBoundary:
+          // Make an itype bounds declaration around the declaration.
           break;
         case DoNothing:
+          // Don't need to do anything in this case. 
           break;
       }
     }
