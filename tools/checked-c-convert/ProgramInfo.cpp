@@ -19,12 +19,21 @@ using namespace llvm;
 static
 std::string
 tyToStr(const FQType &T) {
-  return T.first.getAsString();
+  std::string tstr = T.first.getAsString();
+
+  if (T.second.hasValue()) {
+    // TOD: Add the bounds expression onto the printed type as well. 
+    const BoundsExpr *BE = T.second.getValue();
+  }
+
+  return tstr;
 }
 
 PointerVariableConstraint::PointerVariableConstraint(DeclaratorDecl *D,
   uint32_t &K, Constraints &CS, const ASTContext &C) :
-  PointerVariableConstraint(FQType(D->getType(),Optional<const BoundsExpr*>()), 
+  PointerVariableConstraint(
+      FQType(D->getType(),D->hasBoundsExpr() ?  Optional<const BoundsExpr*>(D->getBoundsExpr()) : 
+                                                Optional<const BoundsExpr*>()), 
       K, D, D->getName(), CS, C) { }
 
 PointerVariableConstraint::PointerVariableConstraint(const FQType &QT, uint32_t &K,

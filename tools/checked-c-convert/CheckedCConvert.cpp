@@ -132,6 +132,8 @@ InterfaceCase canInterface(ProgramInfo &P, ParmVarDecl *D, ASTContext *C) {
   const FunctionDecl *FD = cast<FunctionDecl>(D->getParentFunctionOrMethod());
   const FunctionDecl *oFD = nullptr;
 
+  assert(D->getType()->isPointerType());
+
   // If there is no body, then there isn't any modular reasoning to conduct.
   if (FD->hasBody(oFD) == false || FD->isVariadic())
     return DoNothing;
