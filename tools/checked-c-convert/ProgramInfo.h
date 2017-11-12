@@ -73,7 +73,7 @@ public:
     Kind(K),BaseType(T),Name(N) {}
 
   // Create a "for-rewriting" representation of this ConstraintVariable.
-  virtual std::string mkString(Constraints::EnvironmentMap &E) = 0;
+  virtual std::string mkString(Constraints::EnvironmentMap &E, bool withName = true) = 0;
 
   // Debug printing of the constraint variable.
   virtual void print(llvm::raw_ostream &O) const = 0;
@@ -166,7 +166,7 @@ public:
     return S->getKind() == PointerVariable;
   }
 
-  std::string mkString(Constraints::EnvironmentMap &E);
+  std::string mkString(Constraints::EnvironmentMap &E, bool withName = true);
 
   FunctionVariableConstraint *getFV() { return FV; }
 
@@ -227,7 +227,7 @@ public:
     return paramVars.at(i);
   }
 
-  std::string mkString(Constraints::EnvironmentMap &E);
+  std::string mkString(Constraints::EnvironmentMap &E, bool withName = true);
   void print(llvm::raw_ostream &O) const;
   void dump() const { print(llvm::errs()); }
   void constrainTo(Constraints &CS, ConstAtom *C, bool checkSkip=false);

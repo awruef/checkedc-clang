@@ -607,20 +607,27 @@ bool CastPlacementVisitor::VisitCallExpr(CallExpr *E) {
       for (unsigned i = 0; i < FD->getNumParams(); i++) {
         if (E->getArg(i)->getType()->isPointerType()) {
           auto As = Info.getVariable(E->getArg(i), Context, true);
-          auto A = getHighest(As, Info);
           auto Bs = Info.getVariable(Declaration->getParamDecl(i), Context, false);
-          auto B = getHighest(Bs, Info);
           auto Cs = Info.getVariable(Definition->getParamDecl(i), Context, true);
-          auto C = getHighest(Cs, Info);
 
-          assert(A != nullptr && B != nullptr && C != nullptr);
-          // Are B and C equal? If they aren't, then that means we have a bounds 
-          // interface.  
-          if (B->isEq(*C, Info)) {
-            // If they are equal, then we can just use B.
-             
-          } else {
+          // We could have no constraint variables for the parameter, because it
+          // could result from something like a cast from a literal. In that case,
+          // there is not much we can do? 
+          if (As.size() > 0) {
+            auto A = getHighest(As, Info);
+            auto B = getHighest(Bs, Info);
+            auto C = getHighest(Cs, Info);
 
+            assert(B != nullptr && C != nullptr);
+
+            // Are B and C equal? If they aren't, then that means we have a bounds 
+            // interface.  
+            if (B->isEq(*C, Info)) {
+              // If they are equal, then we can just use B.
+               
+            } else {
+
+            }
           }
         }
       }
@@ -653,6 +660,7 @@ bool ParameterVisitor::VisitFunctionDecl(FunctionDecl *FD) {
       switch(canInterface(Info, P, Context)) {
         case IncreaseCallers:
           // Insert casts at all the call sites.
+          // I think this case is already handled. 
           break;
         case MakeBoundary:
           // Make an itype bounds declaration around the declaration.
@@ -767,7 +775,25 @@ public:
 
         if (PV && PV->anyChanges(Info.getConstraints().getVariables())) {
           // Rewrite a declaration.
+          
+          // Check to see if this declaration can be re-written using a 
+          // bounds-safe interface. 
           std::string newTy = PV->mkString(Info.getConstraints().getVariables());
+          bool makeBoundary = false;
+          
+          if (ParmVarDecl *PVD = dyn_cast<ParmVarDecl>(D)) 
+            makeBoundary = (canInterface(Info, PVD, &Context) == MakeBoundary);
+
+          if (makeBoundary) {
+            // Replace newTy with a boundary type string for this parameter. 
+            std::string baseS = ""; 
+            raw_string_ostream base(baseS); 
+
+            D->print(base);
+            base << " : itype(" + PV->mkString(Info.getConstraints().getVariables(), false) + ")";
+            newTy = base.str();
+          } 
+          
           rewriteThese.insert(DAndReplace(DeclNStmt(D, DS), newTy));
         } else if (FV && FV->anyChanges(Info.getConstraints().getVariables())) {
           // Rewrite a function variables return value.

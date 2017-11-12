@@ -227,7 +227,7 @@ void PointerVariableConstraint::print(raw_ostream &O) const {
 // variables and potentially nested function pointer declaration. Produces a 
 // string that can be replaced in the source code.
 std::string
-PointerVariableConstraint::mkString(Constraints::EnvironmentMap &E) {
+PointerVariableConstraint::mkString(Constraints::EnvironmentMap &E, bool withName) {
   std::ostringstream ss;
   std::ostringstream pss;
   unsigned caratsToAdd = 0;
@@ -271,7 +271,7 @@ PointerVariableConstraint::mkString(Constraints::EnvironmentMap &E) {
         OriginalArrType oat = i->second.first;
         uint64_t oas = i->second.second;
 
-        if (emittedName == false) {
+        if (emittedName == false && withName == true) {
           emittedName = true;
           pss << getName();
         }
@@ -335,7 +335,7 @@ PointerVariableConstraint::mkString(Constraints::EnvironmentMap &E) {
   ss << " ";
 
   std::string finalDec;
-  if (emittedName == false) {
+  if (emittedName == false && withName == true) {
     ss << getName();
     finalDec = ss.str();
   } else {
@@ -571,7 +571,7 @@ void FunctionVariableConstraint::print(raw_ostream &O) const {
 }
 
 std::string
-FunctionVariableConstraint::mkString(Constraints::EnvironmentMap &E) {
+FunctionVariableConstraint::mkString(Constraints::EnvironmentMap &E, bool withName) {
   std::string s = "";
   // TODO punting on what to do here. The right thing to do is to figure out
   // the LUB of all of the V in returnVars.
