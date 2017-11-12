@@ -2,7 +2,7 @@
 //
 // Tests for malloc and friends. 
 //
-// RUN: checked-c-convert %s -- | FileCheck -match-full-lines %s
+// RUN: checked-c-convert %s -- -fcheckedc-extension | FileCheck -match-full-lines %s
 // RUN: checked-c-convert %s -- | %clang_cc1 -fno-builtin -verify -fcheckedc-extension -x c -
 // expected-no-diagnostics
 //
