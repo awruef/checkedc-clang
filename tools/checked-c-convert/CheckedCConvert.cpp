@@ -596,9 +596,6 @@ bool CastPlacementVisitor::VisitCallExpr(CallExpr *E) {
         Declaration = FD; 
       }
 
-      errs() << "CastPlacementVisitor::visitCallExpr\n";
-      E->dump();
-
       // We now have something much more principled we can do here:
       //  - Look up the top-most ConstraintVariable for the expression, A
       //  - Look up the top-most ConstraintVariable for the declaration, B
@@ -606,13 +603,13 @@ bool CastPlacementVisitor::VisitCallExpr(CallExpr *E) {
       //  B and C might be the same, if the function has no body.
       for (unsigned i = 0; i < FD->getNumParams(); i++) {
         if (E->getArg(i)->getType()->isPointerType()) {
+          SourceLocation ESL = E->getArg(i)->IgnoreImpCasts()->getExprLoc();
           auto As = Info.getVariable(E->getArg(i), Context, true);
           auto Bs = Info.getVariable(Declaration->getParamDecl(i), Context, false);
           auto Cs = Info.getVariable(Definition->getParamDecl(i), Context, true);
 
           // We could have no constraint variables for the parameter, because it
-          // could result from something like a cast from a literal. In that case,
-          // there is not much we can do? 
+          // could result from something like a cast from a literal. 
           if (As.size() > 0) {
             auto A = getHighest(As, Info);
             auto B = getHighest(Bs, Info);
@@ -623,11 +620,30 @@ bool CastPlacementVisitor::VisitCallExpr(CallExpr *E) {
             // Are B and C equal? If they aren't, then that means we have a bounds 
             // interface.  
             if (B->isEq(*C, Info)) {
+              errs() << "A: ";
+              A->dump();
+              errs() << "\n";
+              errs() << "B: ";
+              B->dump();
+              errs() << "\n";
+              errs() << "C: ";
+              C->dump();
+              errs() << "\n";
+ 
               // If they are equal, then we can just use B.
-               
+              if (B->isLt(*A, Info)) {
+                R.InsertTextBefore(ESL, "A DOWNWARD CAST HERE BOYS");
+              } else {
+                R.InsertTextBefore(ESL, "AN UPWARD CAST HERE BOYS");
+              }
             } else {
-
+              llvm_unreachable("NIY");
             }
+          } else {
+            // In this case, just get the straight C type of E->getArg(i),
+            // and see if it's a pointer type. If it is, and B or C are 
+            // something not-wild, insert an assume bounds cast. 
+            R.InsertTextBefore(ESL, "A DOWNWARD CAST HERE BOYS");
           }
         }
       }
@@ -637,9 +653,9 @@ bool CastPlacementVisitor::VisitCallExpr(CallExpr *E) {
   return true;
 }
 
-class ParameterVisitor : public RecursiveASTVisitor<ParameterVisitor> {
+class RefinerVisitor : public RecursiveASTVisitor<RefinerVisitor> {
 public:
-  explicit ParameterVisitor(ASTContext *C, ProgramInfo &I) 
+  explicit RefinerVisitor(ASTContext *C, ProgramInfo &I) 
     : Context(C), Info(I) {}
 
   bool VisitFunctionDecl(FunctionDecl *);
@@ -648,29 +664,25 @@ private:
   ProgramInfo &Info;
 };
 
-bool ParameterVisitor::VisitFunctionDecl(FunctionDecl *FD) {
-  // Only visit the actual definition site of the function. 
-  const FunctionDecl *oFD = nullptr;
-  if (FD->hasBody(oFD) == false || FD != oFD)
+bool RefinerVisitor::VisitFunctionDecl(FunctionDecl *FD) {
+  // Check if we have no body for this function. 
+  if (Info.seenAnyBody(FD->getNameAsString()))
     return true;
 
-  for (auto &P : FD->parameters()) {
-    // Go over each parameter for this declaration and ask what we can do. 
-    if (P->getType()->isPointerType()) {
-      switch(canInterface(Info, P, Context)) {
-        case IncreaseCallers:
-          // Insert casts at all the call sites.
-          // I think this case is already handled. 
-          break;
-        case MakeBoundary:
-          // Make an itype bounds declaration around the declaration.
-          break;
-        case DoNothing:
-          // Don't need to do anything in this case. 
-          break;
-      }
-    }
-  }
+  // Check if this function is one for whom we should erase constraints.
+  //if (!Info.isExternOkay(FD->getNameAsString()))
+  //  return true;
+
+  Constraints &CS = Info.getConstraints();
+  auto V = Info.getVariable(FD, Context);
+  // Separate the uses of this function's variables. 
+  for (auto i : V) 
+    i->separate(CS);
+
+  // Constrain the variables on this function to top anyway. Users will
+  // get casted to/from as appropraite. 
+  for (auto i : V)
+    i->constrainTo(CS, CS.getWild());
 
   return true;
 }
@@ -683,13 +695,9 @@ public:
   virtual void HandleTranslationUnit(ASTContext &Context) {
     Info.enterCompilationUnit(Context);
 
-    // What we want to do here is to find ParmVarDecl's that can be replaced
-    // with bounds safe interfaces. We want to find them at the function body
-    // and then update the constraints globally. During the re-writing phase, 
-    // we'll then do the right thing globally. 
-    ParameterVisitor PV(&Context, Info);
+    RefinerVisitor RV(&Context, Info);
     for (const auto &D : Context.getTranslationUnitDecl()->decls())
-      PV.TraverseDecl(D);
+      RV.TraverseDecl(D);
 
     Info.exitCompilationUnit();
   }
@@ -931,16 +939,19 @@ int main(int argc, const char **argv) {
   // 1. Gather constraints.
   auto ConstraintTool = newFrontendActionFactoryA<
     GenericAction<ConstraintBuilderConsumer, ProgramInfo>>(Info);
-  
-  if (!ConstraintTool)
-    llvm_unreachable("No action");
-  
+  assert(ConstraintTool); 
   Tool.run(ConstraintTool.get());
 
   if (!Info.link()) {
     errs() << "Linking failed!\n";
     return 1;
   }
+
+  // 1a. Refine constraints. 
+  auto RefineTool = newFrontendActionFactoryA<
+    GenericAction<ConstraintRefinerConsumer, ProgramInfo>>(Info);
+  assert(RefineTool);
+  Tool.run(RefineTool.get());
 
   // 2. Solve constraints.
   if (Verbose)
@@ -954,15 +965,6 @@ int main(int argc, const char **argv) {
     outs() << "Constraints solved\n";
   if (DumpIntermediate)
     Info.dump();
-
-  // 2a. Refine constraints. 
-  auto RefineTool = newFrontendActionFactoryA<
-    GenericAction<ConstraintRefinerConsumer, ProgramInfo>>(Info);
-
-  if (!RefineTool)
-    llvm_unreachable("No action");
-
-  Tool.run(RefineTool.get());
 
   // 3. Re-write based on constraints.
   auto RewriteTool = newFrontendActionFactoryB<

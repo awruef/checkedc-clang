@@ -84,6 +84,7 @@ public:
   // ConstrainedVars when applying constraints. This should be set when
   // applying constraints due to external symbols, during linking. 
   virtual void constrainTo(Constraints &CS, ConstAtom *C, bool checkSkip=false) = 0;
+  virtual void separate(Constraints &CS) = 0;
 
   // Returns true if any of the constraint variables 'within' this instance
   // have a binding in E other than top. E should be the EnvironmentMap that
@@ -173,6 +174,7 @@ public:
   void print(llvm::raw_ostream &O) const ;
   void dump() const { print(llvm::errs()); }
   void constrainTo(Constraints &CS, ConstAtom *C, bool checkSkip=false);
+  void separate(Constraints &CS);
   bool anyChanges(Constraints::EnvironmentMap &E);
 
   bool isLt(const ConstraintVariable &other, ProgramInfo &P) const;
@@ -231,6 +233,7 @@ public:
   void print(llvm::raw_ostream &O) const;
   void dump() const { print(llvm::errs()); }
   void constrainTo(Constraints &CS, ConstAtom *C, bool checkSkip=false);
+  void separate(Constraints &CS);
   bool anyChanges(Constraints::EnvironmentMap &E);
 
   bool isLt(const ConstraintVariable &other, ProgramInfo &P) const;
@@ -317,11 +320,21 @@ public:
 
   VariableMap &getVarMap() { return Variables;  }
 
-private:
   // Function to check if an external symbol is okay to leave 
   // constrained. 
   bool isExternOkay(std::string ext);
+  
+  bool seenAnyBody(std::string ext) {
+    bool r = false;
+   
+    auto U = ExternFunctions.find(ext);
+    if (U != ExternFunctions.end())
+      r = (*U).second;
 
+    return r; 
+  }
+
+private:
   std::list<clang::RecordDecl*> Records;
   // Next available integer to assign to a variable.
   uint32_t freeKey;

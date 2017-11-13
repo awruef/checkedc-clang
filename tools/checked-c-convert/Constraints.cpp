@@ -18,6 +18,70 @@ static cl::opt<bool> DebugSolver("debug-solver",
   cl::desc("Dump intermediate solver state"),
   cl::init(false), cl::cat(SolverCategory));
 
+void Constraints::separateVariable(VarAtom *V) {
+  // Find all the constraints where V is either the lhs or the rhs of an
+  // equality statement, and remove that constraint from the system. 
+  ConstraintSet removedConstraints;
+
+  for (auto &C : constraints) {
+    if (Eq *E = dyn_cast<Eq>(C)) {
+      const Atom *lhs = E->getLHS();
+      const Atom *rhs = E->getRHS();
+
+      if (*lhs == *V || *rhs == *V)
+        removedConstraints.insert(C);
+    }
+  }
+
+  // Visit all the constraints and remove any cached references to the 
+  // constraints in removedConstraints. 
+  for (auto C : constraints) {
+    if (Eq *E = dyn_cast<Eq>(C)) {
+      if (VarAtom *vLHS = dyn_cast<VarAtom>(E->getLHS())) {
+        for (auto D : removedConstraints) {
+          auto E = vLHS->Constraints.find(D);
+
+          if (E != vLHS->Constraints.end()) 
+            vLHS->Constraints.erase(E);
+        }
+      }
+    } else if (Not *N = dyn_cast<Not>(C)) {
+      if (Eq *E = dyn_cast<Eq>(N->getBody())) {
+        if (VarAtom *vLHS = dyn_cast<VarAtom>(E->getLHS())) {
+          for (auto D : removedConstraints) {
+            auto E = vLHS->Constraints.find(D);
+
+            if (E != vLHS->Constraints.end()) 
+              vLHS->Constraints.erase(E);
+          }
+        }
+      }
+    } else if (Implies *I = dyn_cast<Implies>(C)) {
+      if (Eq *E = dyn_cast<Eq>(I->getPremise())) {
+        if (VarAtom *vLHS = dyn_cast<VarAtom>(E->getLHS())) {
+          for (auto D : removedConstraints) {
+            auto E = vLHS->Constraints.find(D);
+
+            if (E != vLHS->Constraints.end()) 
+              vLHS->Constraints.erase(E);
+          }
+        }
+      }
+    } else {
+      llvm_unreachable("unsupported constraint");
+    }
+  } 
+
+  // Unlink the constraints.
+  constraints.erase(removedConstraints.begin(), removedConstraints.end());
+
+  // Delete the constraints now. 
+  for (auto C : removedConstraints) 
+   delete C;
+
+  return;
+}
+
 // Add a constraint to the set of constraints. If the constraint is already 
 // present (by syntactic equality) return false. 
 bool Constraints::addConstraint(Constraint *C) {

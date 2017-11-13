@@ -512,6 +512,19 @@ void FunctionVariableConstraint::constrainTo(Constraints &CS, ConstAtom *A, bool
       U->constrainTo(CS, A, checkSkip);
 }
 
+// This one is easy, just separate all the variables for our 
+// parameter and return varaibles. 
+void FunctionVariableConstraint::separate(Constraints &CS) {
+  for (const auto &V : returnVars)
+    V->separate(CS);  
+
+  for (const auto &V : paramVars)
+    for (const auto &U : V)
+      U->separate(CS);
+
+  return;
+}
+
 bool FunctionVariableConstraint::anyChanges(Constraints::EnvironmentMap &E) {
   bool f = false;
 
@@ -538,6 +551,15 @@ void PointerVariableConstraint::constrainTo(Constraints &CS, ConstAtom *A, bool 
 
   if (FV)
     FV->constrainTo(CS, A, checkSkip);
+}
+
+void PointerVariableConstraint::separate(Constraints &CS) {
+  for (const auto &V : vars) 
+    CS.separateVariable(CS.getVar(V));
+
+  if (FV)
+    FV->separate(CS);
+  return;
 }
 
 bool PointerVariableConstraint::anyChanges(Constraints::EnvironmentMap &E) {
