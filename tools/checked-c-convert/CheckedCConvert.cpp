@@ -595,7 +595,9 @@ bool CastPlacementVisitor::VisitCallExpr(CallExpr *E) {
       } else {
         Declaration = FD; 
       }
-
+      
+      Constraints &CS = Info.getConstraints();
+      auto &env = CS.getVariables();
       // We now have something much more principled we can do here:
       //  - Look up the top-most ConstraintVariable for the expression, A
       //  - Look up the top-most ConstraintVariable for the declaration, B
@@ -629,12 +631,18 @@ bool CastPlacementVisitor::VisitCallExpr(CallExpr *E) {
               errs() << "C: ";
               C->dump();
               errs() << "\n";
- 
-              // If they are equal, then we can just use B.
-              if (B->isLt(*A, Info)) {
-                R.InsertTextBefore(ESL, "A DOWNWARD CAST HERE BOYS");
+
+              // B and C wild, A ptr 
+              if (A->isEq(*B, Info)) {
+                llvm_unreachable("NIY");
               } else {
-                R.InsertTextBefore(ESL, "AN UPWARD CAST HERE BOYS");
+                if (B->isLt(*A, Info)) { // B < A
+                  std::string castTo = B->mkString(env, false);
+                  R.InsertTextBefore(ESL, "AN UPWARD CAST HERE BOYS");
+                } else { // A < B
+                  std::string castTo = B->mkString(env, false);
+                  R.InsertTextBefore(ESL, "("+castTo+")");
+                }
               }
             } else {
               llvm_unreachable("NIY");
