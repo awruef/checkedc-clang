@@ -72,12 +72,11 @@ void Constraints::separateVariable(VarAtom *V) {
     }
   } 
 
-  // Unlink the constraints.
-  constraints.erase(removedConstraints.begin(), removedConstraints.end());
-
   // Delete the constraints now. 
-  for (auto C : removedConstraints) 
-   delete C;
+  for (auto C : removedConstraints) {
+    constraints.erase(C);
+    delete C;
+  }
 
   return;
 }
