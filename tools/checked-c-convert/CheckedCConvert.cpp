@@ -547,6 +547,13 @@ void CastPlacementVisitor::assign(std::set<ConstraintVariable *> &lhs,
   if (lhs.size() == 0)
     return;
 
+  // Hack: If Source has a bounds-safe interface, don't do anything.
+  if (const CallExpr *Call = dyn_cast<const CallExpr>(Source)) 
+    if (const Decl *D = Call->getCalleeDecl()) 
+      if (const DeclaratorDecl *FD = dyn_cast<const DeclaratorDecl>(D)) 
+        if (FD->getBoundsExpr())
+          return;
+
   auto A = getHighest(lhs, Info);
 
   const CStyleCastExpr *Cast = nullptr;
@@ -683,6 +690,10 @@ bool CastPlacementVisitor::VisitCallExpr(CallExpr *E) {
       //  - Look up the top-most ConstraintVariable for the definition, C
       //  B and C might be the same, if the function has no body.
       for (unsigned i = 0; i < FD->getNumParams(); i++) {
+        // Hack: Don't do anything if the declaration has a bounds interface. 
+        if (Declaration->getParamDecl(i)->hasBoundsExpr())
+          continue;
+
         if (E->getArg(i)->getType()->isPointerType()) {
           SourceLocation ESL = E->getArg(i)->IgnoreImpCasts()->getExprLoc();
           auto As = Info.getVariable(E->getArg(i), Context, true);
@@ -695,13 +706,17 @@ bool CastPlacementVisitor::VisitCallExpr(CallExpr *E) {
             auto ExpCst = getHighest(As, Info);
             auto ParamCst = getHighest(Bs, Info);
             auto C = getHighest(Cs, Info);
-
-            assert(ParamCst != nullptr && C != nullptr);
+					
+            // Sometimes, Declaration->getParamDecl(i) will give us something 
+            // with invalid source locations and we can't resolve it to
+            // anything.
+            if (ParamCst == nullptr)
+              continue;
 
             // C is the definition constraints, ParamCst is the declaration 
             // constraints. If they aren't equal, we want to use the *lowest*
             // one, because that could be the bounds safe interface. 
-            if (!ParamCst->isEq(*C, Info)) 
+            if (C != nullptr && !ParamCst->isEq(*C, Info)) 
               if (C->isLt(*ParamCst, Info)) 
                 ParamCst = C;
 
@@ -723,59 +738,6 @@ bool CastPlacementVisitor::VisitCallExpr(CallExpr *E) {
 
   return true;
 }
-
-class RefinerVisitor : public RecursiveASTVisitor<RefinerVisitor> {
-public:
-  explicit RefinerVisitor(ASTContext *C, ProgramInfo &I) 
-    : Context(C), Info(I) {}
-
-  bool VisitFunctionDecl(FunctionDecl *);
-private:
-  ASTContext *Context;
-  ProgramInfo &Info;
-};
-
-bool RefinerVisitor::VisitFunctionDecl(FunctionDecl *FD) {
-  // Check if we have no body for this function. 
-  if (Info.seenAnyBody(FD->getNameAsString()))
-    return true;
-
-  // Check if this function is one for whom we should erase constraints.
-  //if (!Info.isExternOkay(FD->getNameAsString()))
-  //  return true;
-
-  Constraints &CS = Info.getConstraints();
-  auto V = Info.getVariable(FD, Context);
-  // Separate the uses of this function's variables. 
-  for (auto i : V) 
-    i->separate(CS);
-
-  // Constrain the variables on this function to top anyway. Users will
-  // get casted to/from as appropraite. 
-  for (auto i : V)
-    i->constrainTo(CS, CS.getWild());
-
-  return true;
-}
-
-class ConstraintRefinerConsumer : public ASTConsumer {
-public:
-  explicit ConstraintRefinerConsumer(ProgramInfo &I, ASTContext *Context) 
-    : Info(I) {}
-
-  virtual void HandleTranslationUnit(ASTContext &Context) {
-    Info.enterCompilationUnit(Context);
-
-    RefinerVisitor RV(&Context, Info);
-    for (const auto &D : Context.getTranslationUnitDecl()->decls())
-      RV.TraverseDecl(D);
-
-    Info.exitCompilationUnit();
-  }
-
-private:
-  ProgramInfo &Info;
-};
 
 class RewriteConsumer : public ASTConsumer {
 public:
@@ -1018,11 +980,9 @@ int main(int argc, const char **argv) {
     return 1;
   }
 
-  // 1a. Refine constraints. 
-  auto RefineTool = newFrontendActionFactoryA<
-    GenericAction<ConstraintRefinerConsumer, ProgramInfo>>(Info);
-  assert(RefineTool);
-  Tool.run(RefineTool.get());
+  // 1a. Refine constraints based on which functions we've
+  //     seen globally. 
+  Info.refine();
 
   // 2. Solve constraints.
   if (Verbose)

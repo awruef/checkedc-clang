@@ -23,57 +23,27 @@ void Constraints::separateVariable(VarAtom *V) {
   // equality statement, and remove that constraint from the system. 
   ConstraintSet removedConstraints;
 
-  for (auto &C : constraints) {
+  for (auto &C : V->Constraints) {
     if (Eq *E = dyn_cast<Eq>(C)) {
-      const Atom *lhs = E->getLHS();
-      const Atom *rhs = E->getRHS();
+      Atom *lhs = E->getLHS();
+      Atom *rhs = E->getRHS();
 
       if (*lhs == *V || *rhs == *V)
         removedConstraints.insert(C);
+
+      if (VarAtom *lhsV = dyn_cast<VarAtom>(lhs)) 
+        if (*lhsV != *V) 
+          lhsV->Constraints.erase(C);
+
+      if (VarAtom *rhsV = dyn_cast<VarAtom>(rhs)) 
+        if (*rhsV != *V) 
+          rhsV->Constraints.erase(C);
     }
   }
 
-  // Visit all the constraints and remove any cached references to the 
-  // constraints in removedConstraints. 
-  for (auto C : constraints) {
-    if (Eq *E = dyn_cast<Eq>(C)) {
-      if (VarAtom *vLHS = dyn_cast<VarAtom>(E->getLHS())) {
-        for (auto D : removedConstraints) {
-          auto E = vLHS->Constraints.find(D);
-
-          if (E != vLHS->Constraints.end()) 
-            vLHS->Constraints.erase(E);
-        }
-      }
-    } else if (Not *N = dyn_cast<Not>(C)) {
-      if (Eq *E = dyn_cast<Eq>(N->getBody())) {
-        if (VarAtom *vLHS = dyn_cast<VarAtom>(E->getLHS())) {
-          for (auto D : removedConstraints) {
-            auto E = vLHS->Constraints.find(D);
-
-            if (E != vLHS->Constraints.end()) 
-              vLHS->Constraints.erase(E);
-          }
-        }
-      }
-    } else if (Implies *I = dyn_cast<Implies>(C)) {
-      if (Eq *E = dyn_cast<Eq>(I->getPremise())) {
-        if (VarAtom *vLHS = dyn_cast<VarAtom>(E->getLHS())) {
-          for (auto D : removedConstraints) {
-            auto E = vLHS->Constraints.find(D);
-
-            if (E != vLHS->Constraints.end()) 
-              vLHS->Constraints.erase(E);
-          }
-        }
-      }
-    } else {
-      llvm_unreachable("unsupported constraint");
-    }
-  } 
-
   // Delete the constraints now. 
   for (auto C : removedConstraints) {
+    V->Constraints.erase(C);
     constraints.erase(C);
     delete C;
   }

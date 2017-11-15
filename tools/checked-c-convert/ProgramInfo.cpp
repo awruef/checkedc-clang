@@ -885,48 +885,10 @@ void ProgramInfo::seeFunctionDecl(FunctionDecl *F, ASTContext *C) {
   } else {
     (*it).second.insert(toAdd.begin(), toAdd.end());
   }
-
-  // Look up the constraint variables for the return type and parameter 
-  // declarations of this function, if any.
-  /*
-  std::set<uint32_t> returnVars;
-  std::vector<std::set<uint32_t> > parameterVars(F->getNumParams());
-  PersistentSourceLoc PLoc = PersistentSourceLoc::mkPSL(F, *C);
-  int i = 0;
-
-  std::set<ConstraintVariable*> FV = getVariable(F, C);
-  assert(FV.size() == 1);
-  const ConstraintVariable *PFV = (*(FV.begin()));
-  assert(PFV != NULL);
-  const FVConstraint *FVC = dyn_cast<FVConstraint>(PFV);
-  assert(FVC != NULL);
-
-  //returnVars = FVC->getReturnVars();
-  //unsigned i = 0;
-  //for (unsigned i = 0; i < FVC->numParams(); i++) {
-  //  parameterVars.push_back(FVC->getParamVar(i));
-  //}
-
-  assert(PLoc.valid());
-  GlobalFunctionSymbol *GF = 
-    new GlobalFunctionSymbol(fn, PLoc, parameterVars, returnVars);
-
-  // Add this to the map of global symbols. 
-  std::map<std::string, std::set<GlobalSymbol*> >::iterator it = 
-    GlobalSymbols.find(fn);
-  
-  if (it == GlobalSymbols.end()) {
-    std::set<GlobalSymbol*> N;
-    N.insert(GF);
-    GlobalSymbols.insert(std::pair<std::string, std::set<GlobalSymbol*> >
-      (fn, N));
-  } else {
-    (*it).second.insert(GF);
-  }*/
 }
 
 void ProgramInfo::seeGlobalDecl(clang::VarDecl *G) {
-
+  return;
 }
 
 // Populate Variables, VarDeclToStatement, RVariables, and DepthMap with
@@ -1310,4 +1272,29 @@ ProgramInfo::getVariable(const Expr *E, ASTContext *C, bool inFunctionContext) {
     return getVariableHelper(E, T, C);
   else
     return T;
+}
+
+void ProgramInfo::refine(void) {
+  if (Verbose)
+    errs() << "Refining\n";
+
+  for (const auto &I : ExternFunctions) {
+    if (I.second == false) {
+      // Perform constraint separation based refinement on all of the 
+      // Constraints that we can find. 
+      auto U = GlobalSymbols.find(I.first); 
+      if (U != GlobalSymbols.end()) {
+        for (auto &J : U->second) {
+          J->separate(CS);
+          J->constrainTo(CS, CS.getWild());
+        }
+      }
+    
+    }
+  }
+
+  if (Verbose)
+    errs() << "Refining done\n";
+
+  return;
 }
