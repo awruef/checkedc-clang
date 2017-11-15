@@ -24,7 +24,7 @@ void foo(void) {
   return;
 }
 //CHECK: void foo(void) {
-//CHECK-NEXT: _Ptr<int> a = (int *) malloc(sizeof(int));
+//CHECK-NEXT: _Ptr<int> a =  /*(int *) */_Assume_bounds_cast<_Ptr<int> >(malloc(sizeof(int)));
 //CHECK-NEXT: *a = 0;
 //CHECK-NEXT: free((void* )a);
 
@@ -49,4 +49,4 @@ void add_some_stuff(listhead *hd) {
   return;
 }
 //CHECK: void add_some_stuff(_Ptr<listhead>  hd) {
-//CHECK-NEXT: _Ptr<listelt>  l1 = (listelt *) malloc(sizeof(listelt));
+//CHECK-NEXT: _Ptr<listelt>  l1 =  /*(listelt *) */_Assume_bounds_cast<_Ptr<listelt> >(malloc(sizeof(listelt)));

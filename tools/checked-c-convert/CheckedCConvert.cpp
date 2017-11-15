@@ -525,41 +525,121 @@ public:
     : Context(C), Info(I), R(R), Files(Files) {} 
 
   bool VisitCallExpr(CallExpr *);
+  bool VisitDeclStmt(DeclStmt *);
+  bool VisitBinAssign(BinaryOperator *);
 private:
-  std::set<unsigned int> getParamsForExtern(std::string);
-  bool anyTop(std::set<ConstraintVariable*>);
+  void assign(const Expr *, const Expr *);
+  void assign(const ValueDecl *, const Expr *);
+  void assign(std::set<ConstraintVariable *> &lhs, 
+              std::set<ConstraintVariable *> &rhs, 
+              const Expr *Source);
   ASTContext *Context;
   ProgramInfo &Info;
   Rewriter &R;
   std::set<FileID> &Files;
 };
 
-// For a given function name, what are the argument positions for that function
-// that we would want to treat specially and insert a cast into? 
-std::set<unsigned int> CastPlacementVisitor::getParamsForExtern(std::string E) {
-  return StringSwitch<std::set<unsigned int>>(E)
-    .Case("free", {0})
-    .Default(std::set<unsigned int>());
+void CastPlacementVisitor::assign(std::set<ConstraintVariable *> &lhs,
+                                  std::set<ConstraintVariable *> &rhs,
+                                  const Expr *Source)
+{
+  // No constraints on the left hand side, nothing to do really?
+  if (lhs.size() == 0)
+    return;
+
+  auto A = getHighest(lhs, Info);
+
+  const CStyleCastExpr *Cast = nullptr;
+  // Maybe we have nothing on the rhs because what we want is behind a cast. 
+  if (rhs.size() == 0) 
+    if ((Cast = dyn_cast<CStyleCastExpr>(Source))) 
+      rhs = Info.getVariable(Cast->getSubExpr(), Context);
+
+  if (rhs.size() == 0) {
+    // TODO: There could be something better to do here.
+  } else {
+    Constraints &CS = Info.getConstraints();
+    auto &env = CS.getVariables();
+    auto B = getHighest(rhs, Info);
+
+    // If the type constraints are equal at this point, then there's nothing
+    // for us to do in the way of cast insertion, really.  
+    if (A->isEq(*B, Info)) 
+      return;
+
+    SourceLocation ESL = Source->getExprLoc();
+    SourceLocation ELL = Source->getLocEnd();
+    if (Cast) {
+      ESL = Cast->getSubExpr()->getExprLoc();
+      ELL = Cast->getSubExpr()->getLocEnd();
+    }
+
+    if (A->isLt(*B, Info)) { 
+      // Wrap the body of the source expression in an _Assume_bounds_cast. 
+      std::string castTo = A->mkString(env, false);
+      R.InsertTextBefore(ESL, "_Assume_bounds_cast<"+castTo+">(");
+      R.InsertTextAfter(ELL, ")");
+    } else { 
+      // Wrap the body of the source expression in a C style cast. 
+      std::string castTo = A->mkString(env, false);
+      R.InsertTextBefore(ESL, "("+castTo+")");
+    }
+    
+    // If there is a C-style cast, remove it. 
+    if (Cast) {
+      SourceLocation CastLocation = Cast->getExprLoc();
+      SourceLocation SubLocation = Cast->getSubExpr()->getExprLoc();
+      /*SourceRange CastRange(CastLocation, SubLocation);
+      R.RemoveText(CastRange);*/
+      // TODO: For some reason, the above commented out stuff doesn't work
+      //       and removes too much. The stuff below is a hack, by commenting 
+      //       out precisely the region we care about. 
+      R.InsertTextBefore(CastLocation, "/*");
+      R.InsertTextBefore(SubLocation, "*/");
+    } 
+  }
+
+  return;
 }
 
-// Checks the bindings in the environment for all of the constraints
-// associated with C and returns true if any of those constraints 
-// are WILD. 
-bool CastPlacementVisitor::anyTop(std::set<ConstraintVariable*> C) {
-  bool anyTopFound = false;
-  Constraints &CS = Info.getConstraints();
-  Constraints::EnvironmentMap &env = CS.getVariables();
-  for (ConstraintVariable *c : C) {
-    if (PointerVariableConstraint *pvc = dyn_cast<PointerVariableConstraint>(c)) {
-      for (uint32_t v : pvc->getCvars()) {
-        ConstAtom *CK = env[CS.getVar(v)]; 
-        if (CK->getKind() == Atom::A_Wild) {
-          anyTopFound = true;
-        }
-      }
-    }
+// These two functions deal with the assignment case. 
+
+bool CastPlacementVisitor::VisitDeclStmt(DeclStmt *Var) {
+
+  for (auto &D : Var->decls()) 
+    if (VarDecl *VD = dyn_cast<VarDecl>(D)) 
+      // Does this declaration have an initializer? 
+      if (VD->hasInit() && VD->getType()->isPointerType()) 
+        assign(VD, VD->getInit());
+
+  return true;
+}
+
+bool CastPlacementVisitor::VisitBinAssign(BinaryOperator *Assign) {
+  // This is just an assignment. 
+  if (Assign->getType()->isPointerType()) 
+    assign( Assign->getLHS()->IgnoreImplicit(), 
+            Assign->getRHS()->IgnoreImplicit());
+  return true;
+}
+
+void CastPlacementVisitor::assign(const Expr *lhs, const Expr *rhs) {
+  // Does lhs refer to a variable directly? 
+  if (const DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(lhs->IgnoreImplicit())) {
+    assign(DRE->getDecl(), rhs->IgnoreImplicit());
+  } else {
+    auto V = Info.getVariable(lhs, Context);
+    auto U = Info.getVariable(rhs, Context);
+    assign(V, U, rhs);
   }
-  return anyTopFound;
+  return;
+}
+
+void CastPlacementVisitor::assign(const ValueDecl *VD, const Expr *rhs) {
+  auto V = Info.getVariable(VD, Context);
+  auto U = Info.getVariable(rhs, Context);
+  assign(V, U, rhs);
+  return;
 }
 
 // We we have two kinds of casts we can insert: 
@@ -568,7 +648,6 @@ bool CastPlacementVisitor::anyTop(std::set<ConstraintVariable*> C) {
 // We can know when we are in a position to do one or the other by looking at
 // the constraint variables. 
 bool CastPlacementVisitor::VisitCallExpr(CallExpr *E) {
-
   // Find the target of this call. 
   if (Decl *D = E->getCalleeDecl()) {
     if (FunctionDecl *FD = dyn_cast<FunctionDecl>(D)) {
@@ -613,45 +692,29 @@ bool CastPlacementVisitor::VisitCallExpr(CallExpr *E) {
           // We could have no constraint variables for the parameter, because it
           // could result from something like a cast from a literal. 
           if (As.size() > 0) {
-            auto A = getHighest(As, Info);
-            auto B = getHighest(Bs, Info);
+            auto ExpCst = getHighest(As, Info);
+            auto ParamCst = getHighest(Bs, Info);
             auto C = getHighest(Cs, Info);
 
-            assert(B != nullptr && C != nullptr);
+            assert(ParamCst != nullptr && C != nullptr);
 
-            // Are B and C equal? If they aren't, then that means we have a bounds 
-            // interface.  
-            if (B->isEq(*C, Info)) {
-              errs() << "A: ";
-              A->dump();
-              errs() << "\n";
-              errs() << "B: ";
-              B->dump();
-              errs() << "\n";
-              errs() << "C: ";
-              C->dump();
-              errs() << "\n";
+            // C is the definition constraints, ParamCst is the declaration 
+            // constraints. If they aren't equal, we want to use the *lowest*
+            // one, because that could be the bounds safe interface. 
+            if (!ParamCst->isEq(*C, Info)) 
+              if (C->isLt(*ParamCst, Info)) 
+                ParamCst = C;
 
-              // B and C wild, A ptr 
-              if (A->isEq(*B, Info)) {
-                llvm_unreachable("NIY");
+            if (!ExpCst->isEq(*ParamCst, Info)) {
+              if (ParamCst->isLt(*ExpCst, Info)) { 
+                std::string castTo = ParamCst->mkString(env, false);
+                R.InsertTextBefore(ESL, "_Assume_bounds_cast<"+castTo+">(");
+                R.InsertTextAfter(ESL, ")");
               } else {
-                if (B->isLt(*A, Info)) { // B < A
-                  std::string castTo = B->mkString(env, false);
-                  R.InsertTextBefore(ESL, "AN UPWARD CAST HERE BOYS");
-                } else { // A < B
-                  std::string castTo = B->mkString(env, false);
-                  R.InsertTextBefore(ESL, "("+castTo+")");
-                }
+                std::string castTo = ParamCst->mkString(env, false);
+                R.InsertTextBefore(ESL, "("+castTo+")");
               }
-            } else {
-              llvm_unreachable("NIY");
             }
-          } else {
-            // In this case, just get the straight C type of E->getArg(i),
-            // and see if it's a pointer type. If it is, and B or C are 
-            // something not-wild, insert an assume bounds cast. 
-            R.InsertTextBefore(ESL, "A DOWNWARD CAST HERE BOYS");
           }
         }
       }

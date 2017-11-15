@@ -63,7 +63,7 @@ void fret_driver(void) {
 //CHECK-NEXT: int a = 0;
 //CHECK-NEXT: _Ptr<int> b = &a;
 //CHECK-NEXT: _Ptr<int> c = id(b);
-//CHECK-NEXT: int *d = fry();
+//CHECK-NEXT: _Ptr<int> d =  _Assume_bounds_cast<_Ptr<int> >(fry());
 
 typedef int *(*fooptr)(int*, int);
 
@@ -80,7 +80,7 @@ void fooptr_driver(void) {
   int *c = f(b, 1);
 }
 //CHECK: void fooptr_driver(void) {
-//CHECK-NEXT: _Ptr<_Ptr<int> (_Ptr<int> , int )>   f = &good_mut;
+//CHECK-NEXT: _Ptr<_Ptr<int> (_Ptr<int> , int )>   f = (_Ptr<_Ptr<int> (_Ptr<int> , int )> )&good_mut;
 //CHECK-NEXT: int a = 0;
 //CHECK-NEXT: _Ptr<int> b = &a;
 //CHECK-NEXT: _Ptr<int> c = f(b, 1);
