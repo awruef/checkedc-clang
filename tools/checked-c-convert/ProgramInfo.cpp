@@ -677,7 +677,7 @@ CVars getVarsFromConstraint(ConstraintVariable *V, CVars T) {
 
 // Print out statistics of constraint variables on a per-file basis.
 void ProgramInfo::print_stats(std::set<std::string> &F, raw_ostream &O) {
-  std::map<std::string, std::tuple<int, int, int, int> > filesToVars;
+  std::map<std::string, std::tuple<int, int, int, int, int> > filesToVars;
   Constraints::EnvironmentMap &env = CS.getVariables();
 
   // First, build the map and perform the aggregation.
@@ -688,10 +688,15 @@ void ProgramInfo::print_stats(std::set<std::string> &F, raw_ostream &O) {
       int pC = 0;
       int aC = 0;
       int wC = 0;
+      int cC = 0;
 
       auto J = filesToVars.find(fileName);
       if (J != filesToVars.end())
-        std::tie(varC, pC, aC, wC) = J->second;
+        std::tie(varC, pC, aC, wC, cC) = J->second;
+
+      auto U = CastPlacedCount.find(fileName);
+      if (U != CastPlacedCount.end())
+        cC = U->second;
 
       CVars foundVars;
       for (auto &C : I.second) {
@@ -723,17 +728,17 @@ void ProgramInfo::print_stats(std::set<std::string> &F, raw_ostream &O) {
         }
       }
 
-      filesToVars[fileName] = std::tuple<int, int, int, int>(varC, pC, aC, wC);
+      filesToVars[fileName] = std::tuple<int, int, int, int, int>(varC, pC, aC, wC, cC);
     }
   }
 
   // Then, dump the map to output.
 
-  O << "file|#constraints|#ptr|#arr|#wild\n";
+  O << "file|#constraints|#ptr|#arr|#wild|#casts\n";
   for (const auto &I : filesToVars) {
-    int v, p, a, w;
-    std::tie(v, p, a, w) = I.second;
-    O << I.first << "|" << v << "|" << p << "|" << a << "|" << w;
+    int v, p, a, w, c;
+    std::tie(v, p, a, w, c) = I.second;
+    O << I.first << "|" << v << "|" << p << "|" << a << "|" << w << "|" << c;
     O << "\n";
   }
 }

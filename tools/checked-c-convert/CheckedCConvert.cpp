@@ -591,6 +591,9 @@ void CastPlacementVisitor::assign(std::set<ConstraintVariable *> &lhs,
       std::string castTo = A->mkString(env, false);
       R.InsertTextBefore(ESL, "("+castTo+")");
     }
+
+    auto tmpPSL = PersistentSourceLoc::mkPSL(Source, *Context);
+    Info.InsertedCast(tmpPSL.getFileName());
     
     // If there is a C-style cast, remove it. 
     if (Cast) {
@@ -729,6 +732,9 @@ bool CastPlacementVisitor::VisitCallExpr(CallExpr *E) {
                 std::string castTo = ParamCst->mkString(env, false);
                 R.InsertTextBefore(ESL, "("+castTo+")");
               }
+
+              auto tmpLoc = PersistentSourceLoc::mkPSL(E->getArg(i), *Context);
+              Info.InsertedCast(tmpLoc.getFileName());
             }
           }
         }

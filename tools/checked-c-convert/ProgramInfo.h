@@ -335,7 +335,19 @@ public:
     return r; 
   }
 
+  void InsertedCast(std::string filePath) {
+    auto K = CastPlacedCount.find(filePath);
+
+    if (K != CastPlacedCount.end()) {
+      CastPlacedCount[filePath] = K->second + 1;
+    } else {
+      CastPlacedCount[filePath] = 1;
+    }
+  }
+
 private:
+  // Map from file paths to the count of casts inserted into that file. 
+  std::map<std::string,int> CastPlacedCount;
   std::list<clang::RecordDecl*> Records;
   // Next available integer to assign to a variable.
   uint32_t freeKey;
