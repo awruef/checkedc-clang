@@ -755,9 +755,9 @@ public:
 			FileID mainFileID = SM.getMainFileID();
 			const FileEntry *FE = SM.getFileEntryForID(mainFileID);
 			if (FE != NULL)
-				errs() << "Placing constraints in file " << FE->getName() << "\n";
+				errs() << "Placing casts in file " << FE->getName() << "\n";
 			else
-				errs() << "Placing constraints\n";
+				errs() << "Placing casts\n";
 		}
 
     // Unification is done, so visit and see if we need to place any casts
@@ -767,7 +767,7 @@ public:
       CPV.TraverseDecl(D);
 
 		if (Verbose)
-			errs() << "Constraint placement finished\n";
+			errs() << "Cast placement finished\n";
 		
     // Build a map of all of the PersistentSourceLoc's back to some kind of 
     // Stmt, Decl, or Type.
