@@ -750,12 +750,25 @@ public:
     Rewriter R(Context.getSourceManager(), Context.getLangOpts());
     std::set<FileID> Files;
 
+		if (Verbose) {
+			SourceManager &SM = Context.getSourceManager();
+			FileID mainFileID = SM.getMainFileID();
+			const FileEntry *FE = SM.getFileEntryForID(mainFileID);
+			if (FE != NULL)
+				errs() << "Placing constraints in file " << FE->getName() << "\n";
+			else
+				errs() << "Placing constraints\n";
+		}
+
     // Unification is done, so visit and see if we need to place any casts
     // in the program. 
     CastPlacementVisitor CPV = CastPlacementVisitor(&Context, Info, R, Files);
     for (const auto &D : Context.getTranslationUnitDecl()->decls())
       CPV.TraverseDecl(D);
 
+		if (Verbose)
+			errs() << "Constraint placement finished\n";
+		
     // Build a map of all of the PersistentSourceLoc's back to some kind of 
     // Stmt, Decl, or Type.
     VariableMap &VarMap = Info.getVarMap();
@@ -986,14 +999,14 @@ int main(int argc, const char **argv) {
 
   // 2. Solve constraints.
   if (Verbose)
-    outs() << "Solving constraints\n";
+    errs() << "Solving constraints\n";
   Constraints &CS = Info.getConstraints();
   std::pair<Constraints::ConstraintSet, bool> R = CS.solve();
   // TODO: In the future, R.second will be false when there's a conflict, 
   //       and the tool will need to do something about that. 
   assert(R.second == true);
   if (Verbose)
-    outs() << "Constraints solved\n";
+    errs() << "Constraints solved\n";
   if (DumpIntermediate)
     Info.dump();
 
