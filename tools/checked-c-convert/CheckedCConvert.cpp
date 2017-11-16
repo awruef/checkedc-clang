@@ -143,7 +143,7 @@ InterfaceCase canInterface(ProgramInfo &P, ParmVarDecl *D, ASTContext *C) {
   if (oFD == FD) {
     // Find a declaration.  
     for (const auto &tD : FD->redecls()) {
-      if (tD != Definition) {
+      if (tD != Definition && tD->hasPrototype()) {
         Declaration = tD;
         break;
       }
@@ -673,7 +673,7 @@ bool CastPlacementVisitor::VisitCallExpr(CallExpr *E) {
       Declaration = FD;
       if (oFD == FD) {
         for (const auto &tD : FD->redecls()) {
-          if (tD != Definition) {
+          if (tD != Definition && tD->hasPrototype()) {
             Declaration = tD;
             break;
           }
@@ -1020,6 +1020,9 @@ int main(int argc, const char **argv) {
   
   Tool.run(RewriteTool.get());
 
+  errs() << "inoutpaths\n";
+  for (auto &p : inoutPaths)
+    errs() << p << "\n";
   if (DumpStats)
     Info.dump_stats(inoutPaths);
 

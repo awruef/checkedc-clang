@@ -49,8 +49,14 @@ PersistentSourceLoc::mkPSL(SourceLocation SL, ASTContext &Context) {
   SourceLocation ESL = Context.getSourceManager().getExpansionLoc(SL);
   FullSourceLoc FESL = Context.getFullLoc(ESL);
   assert(FESL.isValid());
-  
+
+  // This needs to become the full path to the file. 
   std::string fn = PL.getFilename();
+  auto FID = Context.getSourceManager().
+    getFileID(Context.getSourceManager().getSpellingLoc(ESL));
+  auto FE = Context.getSourceManager().getFileEntryForID(FID);
+  if (FE)
+    fn = FE->tryGetRealPathName();
 
   PersistentSourceLoc PSL(fn, 
     FESL.getExpansionLineNumber(), FESL.getExpansionColumnNumber());

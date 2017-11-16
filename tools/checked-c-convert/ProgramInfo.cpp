@@ -177,7 +177,7 @@ bool PVConstraint::liftedOnCVars(const ConstraintVariable &O,
   auto I = getCvars().begin();
   auto J = OC.begin();
   auto &CS = Info.getConstraints();
-  auto env = CS.getVariables();
+  auto &env = CS.getVariables();
 
   while(I != getCvars().end() && J != OC.end()) {
     // Look up the valuation for I and J. 
@@ -678,7 +678,7 @@ CVars getVarsFromConstraint(ConstraintVariable *V, CVars T) {
 // Print out statistics of constraint variables on a per-file basis.
 void ProgramInfo::print_stats(std::set<std::string> &F, raw_ostream &O) {
   std::map<std::string, std::tuple<int, int, int, int> > filesToVars;
-  Constraints::EnvironmentMap env = CS.getVariables();
+  Constraints::EnvironmentMap &env = CS.getVariables();
 
   // First, build the map and perform the aggregation.
   for (auto &I : Variables) {
@@ -1099,8 +1099,10 @@ ProgramInfo::getVariableHelper(const Expr *E,
               tmp.insert(new PVConstraint(C, PVC->getTy(), PVC->getName(), b, a));
             }
           }
+        } else if (FVConstraint *FVC = dyn_cast<FVConstraint>(CV)) {
+          // TODO: Don't do anything here. 
         } else {
-          llvm_unreachable("Shouldn't dereference a function pointer!");
+          llvm_unreachable("Unknown constraint type");
         }
       }
       T.swap(tmp);
@@ -1222,7 +1224,7 @@ ProgramInfo::getVariable(const Decl *D, ASTContext *C, bool inFunctionContext) {
             // Let's look through all the re-declarations of Parent. 
             const FunctionDecl *fwdDecl = nullptr;
             for (const auto &RD : Parent->redecls()) {
-              if (RD != Parent) {
+              if (RD != Parent && RD->hasPrototype()) {
                 fwdDecl = RD;
                 break;
               }
