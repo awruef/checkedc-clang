@@ -1020,9 +1020,6 @@ int main(int argc, const char **argv) {
   
   Tool.run(RewriteTool.get());
 
-  errs() << "inoutpaths\n";
-  for (auto &p : inoutPaths)
-    errs() << p << "\n";
   if (DumpStats)
     Info.dump_stats(inoutPaths);
 
