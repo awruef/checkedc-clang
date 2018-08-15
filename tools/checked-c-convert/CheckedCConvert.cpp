@@ -822,6 +822,52 @@ bool CastPlacementVisitor::VisitFunctionDecl(FunctionDecl *FD) {
 }
 
 bool CastPlacementVisitor::VisitCallExpr(CallExpr *E) {
+  Decl *CalleeDecl = E->getCalleeDecl(); 
+  if (!CalleeDecl)
+    return true;
+
+  FunctionDecl *FD = dyn_cast<FunctionDecl>(CalleeDecl);
+  if (!FD)
+    return true;
+
+  FunctionDecl *Definition = getDefinition(FD);
+  FunctionDecl *Declaration = getDeclaration(FD);
+
+  // If there is no definition, then there can be no mis-match. 
+  if(Definition == nullptr)
+    return true;
+
+  assert (Declaration != nullptr);
+
+  auto cDecl = dyn_cast<FVConstraint>(
+      getHighest(Info.getVariable(Declaration, Context, false), Info));
+  auto cDefn = dyn_cast<FVConstraint>(
+      getHighest(Info.getVariable(Definition, Context, true), Info));
+  assert(cDecl != nullptr);
+  assert(cDefn != nullptr);
+
+  if (cDecl->numParams() != cDefn->numParams()) 
+    return true;    
+
+  // Walk the parameters and decide if a cast should be inserted. 
+  for (unsigned i = 0; i < cDecl->numParams(); i++) {
+    auto declParm = getHighest(cDecl->getParamVar(i), Info);
+    auto defnParm = getHighest(cDefn->getParamVar(i), Info);
+    auto sCallParm = Info.getVariable(E->getArg(i), Context, true);
+    auto callParm = getHighest(sCallParm, Info);
+
+    if (callParm->isEmpty())
+      continue;
+
+    // Is callParam < defnParm? Then insert a cast, unless, 
+    // callParam >= declParm, in which case leave it alone. 
+    if (callParm->isLt(*defnParm, Info)) {
+      errs() << "I should insert a cast\n";
+    } else {
+      errs() << "I should not insert a cast\n";
+    }
+  }
+
   return true;
 }
 
