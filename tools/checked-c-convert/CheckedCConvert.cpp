@@ -129,7 +129,7 @@ FunctionDecl *getDeclaration(FunctionDecl *FD) {
 
 // A Declaration, optional DeclStmt, and a replacement string
 // for that Declaration. 
-struct DAndReplace
+struct LAndReplace
 {
   Decl        *Declaration; // The declaration to replace.
   DeclStmt    *Statement;   // The DeclStmt, if it exists.
@@ -137,23 +137,23 @@ struct DAndReplace
   bool        fullDecl;     // If the declaration is a function, true if 
                             // replace the entire declaration or just the 
                             // return declaration.
-  DAndReplace() : Declaration(nullptr),
+  LAndReplace() : Declaration(nullptr),
                   Statement(nullptr),
                   Replacement(""),
                   fullDecl(false) { }
 
-  DAndReplace(Decl *D, std::string R) : Declaration(D), 
+  LAndReplace(Decl *D, std::string R) : Declaration(D), 
                                         Statement(nullptr),
                                         Replacement(R),
                                         fullDecl(false) {} 
 
-  DAndReplace(Decl *D, std::string R, bool F) : Declaration(D), 
+  LAndReplace(Decl *D, std::string R, bool F) : Declaration(D), 
                                                 Statement(nullptr),
                                                 Replacement(R),
                                                 fullDecl(F) {} 
 
 
-  DAndReplace(Decl *D, DeclStmt *S, std::string R) :  Declaration(D),
+  LAndReplace(Decl *D, DeclStmt *S, std::string R) :  Declaration(D),
                                                       Statement(S),
                                                       Replacement(R),
                                                       fullDecl(false) { }
@@ -182,22 +182,22 @@ getFunctionDeclarationEnd(FunctionDecl *FD, SourceManager &S)
   }
 }
 
-// Compare two DAndReplace values. The algorithm for comparing them relates 
-// their source positions. If two DAndReplace values refer to overlapping 
+// Compare two LAndReplace values. The algorithm for comparing them relates 
+// their source positions. If two LAndReplace values refer to overlapping 
 // source positions, then they are the same. Otherwise, they are ordered
 // by their placement in the input file. 
 //
 // There are two special cases: Function declarations, and DeclStmts. In turn:
 //
-//  - Function declarations might either be a DAndReplace describing the entire 
+//  - Function declarations might either be a LAndReplace describing the entire 
 //    declaration, i.e. replacing "int *foo(void)" 
 //    with "int *foo(void) : itype(_Ptr<int>)". Or, it might describe just 
 //    replacing only the return type, i.e. "_Ptr<int> foo(void)". This is 
-//    discriminated against with the 'fullDecl' field of the DAndReplace type
+//    discriminated against with the 'fullDecl' field of the LAndReplace type
 //    and the comparison function first checks if the operands are 
 //    FunctionDecls and if the 'fullDecl' field is set. 
 //  - A DeclStmt of mupltiple Decls, i.e. 'int *a = 0, *b = 0'. In this case,
-//    we want the DAndReplace to refer only to the specific sub-region that
+//    we want the LAndReplace to refer only to the specific sub-region that
 //    would be replaced, i.e. '*a = 0' and '*b = 0'. To do that, we traverse
 //    the Decls contained in a DeclStmt and figure out what the appropriate 
 //    source locations are to describe the positions of the independent 
@@ -207,7 +207,7 @@ struct DComp
   SourceManager &SM;
   DComp(SourceManager &S) : SM(S) { }
 
-  SourceRange getWholeSR(SourceRange orig, DAndReplace dr) const {
+  SourceRange getWholeSR(SourceRange orig, LAndReplace dr) const {
     SourceRange newSourceRange(orig);
 
     if (FunctionDecl *FD = dyn_cast<FunctionDecl>(dr.Declaration)) {
@@ -219,7 +219,7 @@ struct DComp
     return newSourceRange;
   }
 
-  bool operator()(const DAndReplace lhs, const DAndReplace rhs) const {
+  bool operator()(const LAndReplace lhs, const LAndReplace rhs) const {
     // Does the source location of the Decl in lhs overlap at all with
     // the source location of rhs?
     SourceRange srLHS = lhs.Declaration->getSourceRange(); 
@@ -281,7 +281,7 @@ struct DComp
   }
 };
 
-typedef std::set<DAndReplace, DComp> RSet;
+typedef std::set<LAndReplace, DComp> RSet;
 
 void rewrite(ParmVarDecl *PV, Rewriter &R, std::string sRewrite) {
   // First, find all the declarations of the containing function.
@@ -327,7 +327,7 @@ void rewrite( VarDecl               *VD,
               std::string           sRewrite, 
               DeclStmt              *Where,
               RSet                  &skip,
-              const DAndReplace     &N,
+              const LAndReplace     &N,
               RSet                  &toRewrite,
               ASTContext            &A) 
 {
@@ -386,7 +386,7 @@ void rewrite( VarDecl               *VD,
       RSet rewritesForThisDecl(DComp(R.getSourceMgr()));
       auto I = toRewrite.find(N);
       while (I != toRewrite.end()) {
-        DAndReplace tmp = *I;
+        LAndReplace tmp = *I;
         if (tmp.Statement == Where)
           rewritesForThisDecl.insert(tmp);
         ++I;
@@ -402,7 +402,7 @@ void rewrite( VarDecl               *VD,
       std::string newMultiLineDeclS = "";
       raw_string_ostream newMLDecl(newMultiLineDeclS);
       for (const auto &DL : Where->decls()) {
-        DAndReplace N;
+        LAndReplace N;
         bool found = false;
         VarDecl *VDL = dyn_cast<VarDecl>(DL);
         assert(VDL != NULL);
@@ -815,7 +815,7 @@ bool CastPlacementVisitor::VisitFunctionDecl(FunctionDecl *FD) {
     if (didAny) 
       // Do all of the declarations.
       for (const auto &RD : Definition->redecls())
-        rewriteThese.insert(DAndReplace(RD, s, true));
+        rewriteThese.insert(LAndReplace(RD, s, true));
   }
 
   return true;
@@ -863,9 +863,20 @@ bool CastPlacementVisitor::VisitCallExpr(CallExpr *E) {
     // callParam >= declParm, in which case leave it alone. 
     if (callParm->isLt(*defnParm, Info)) {
       errs() << "I should insert a cast\n";
-    } else {
+      // Get the type of the destination (defnParm) as a string. 
+      std::string castTy = defnParm->mkString(Info.getConstraints().getVariables(), false);
+      // Get the new expression. 
+      errs() << "Casting to (" << castTy << ")\n";
+      std::string tmp = "";
+      raw_string_ostream n(tmp);
+      n << "(" << castTy << ")";
+      E->getArg(i)->printPretty(n, nullptr, Context->getPrintingPolicy());
+      
+      // Add a re-write statement. 
+      //rewriteThese.insert 
+    } /*else {
       errs() << "I should not insert a cast\n";
-    }
+    }*/
   }
 
   return true;
@@ -951,14 +962,14 @@ public:
         if (PV && PV->anyChanges(Info.getConstraints().getVariables())) {
           // Rewrite a declaration.
           std::string newTy = PV->mkString(Info.getConstraints().getVariables());
-          rewriteThese.insert(DAndReplace(D, DS, newTy));;
+          rewriteThese.insert(LAndReplace(D, DS, newTy));;
         } else if (FV && FV->anyChanges(Info.getConstraints().getVariables())) {
           // Rewrite a function variables return value.
           std::set<ConstraintVariable*> V = FV->getReturnVars();
           if (V.size() > 0) {
             std::string newTy = 
               (*V.begin())->mkString(Info.getConstraints().getVariables());
-            rewriteThese.insert(DAndReplace(D, DS, newTy));
+            rewriteThese.insert(LAndReplace(D, DS, newTy));
           }
         }
       }
