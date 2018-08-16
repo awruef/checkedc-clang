@@ -496,53 +496,69 @@ void rewrite( Rewriter              &R,
 {
   for (const auto &N : toRewrite) {
     Decl *D = N.Declaration;
+    Expr *E = N.ExprLoc;
     DeclStmt *Where = N.Statement;
-    assert(D != nullptr);
+    assert(D != nullptr || E != nullptr);
 
     if (Verbose) {
       errs() << "Replacing type of decl:\n";
-      D->dump();
+      if (D)
+        D->dump();
+      else
+        E->dump();
       errs() << "with " << N.Replacement << "\n";
     }
 
-    // Get a FullSourceLoc for the start location and add it to the
-    // list of file ID's we've touched.
-    SourceRange tTR = D->getSourceRange();
-    FullSourceLoc tFSL(tTR.getBegin(), S);
-    Files.insert(tFSL.getFileID());
-
-    // Is it a parameter type?
-    if (ParmVarDecl *PV = dyn_cast<ParmVarDecl>(D)) {
-      assert(Where == NULL);
-      rewrite(PV, R, N.Replacement);
-    } else if (VarDecl *VD = dyn_cast<VarDecl>(D)) {
-      rewrite(VD, R, N.Replacement, Where, skip, N, toRewrite, A);
-    } else if (FunctionDecl *UD = dyn_cast<FunctionDecl>(D)) {
-      // TODO: If the return type is a fully-specified function pointer, 
-      //       then clang will give back an invalid source range for the 
-      //       return type source range. For now, check that the source
-      //       range is valid. 
-      //       Additionally, a source range can be (mis) identified as 
-      //       spanning multiple files. We don't know how to re-write that,
-      //       so don't.
-        
-      if (N.fullDecl) {
-        SourceRange SR = UD->getSourceRange();
-        SR.setEnd(getFunctionDeclarationEnd(UD, S));
-        
-        if (canRewrite(R, SR))
-          R.ReplaceText(SR, N.Replacement);
-      } else {
-        SourceRange SR = UD->getReturnTypeSourceRange();
-        if (canRewrite(R, SR))
-          R.ReplaceText(SR, N.Replacement);
-      }
-    } else if (FieldDecl *FD = dyn_cast<FieldDecl>(D)) {
-      SourceRange SR = FD->getSourceRange();
+    if (E) {
+      // Handle the case of re-writing an expression. Right now, just
+      // drop in a call to re-write at the expressions source location,
+      // if we can re-write that location. 
+      SourceRange SR = E->getSourceRange();
       std::string sRewrite = N.Replacement;
 
       if (canRewrite(R, SR))
         R.ReplaceText(SR, sRewrite);
+    } else {
+      // Get a FullSourceLoc for the start location and add it to the
+      // list of file ID's we've touched.
+      SourceRange tTR = D->getSourceRange();
+      FullSourceLoc tFSL(tTR.getBegin(), S);
+      Files.insert(tFSL.getFileID());
+
+      // Is it a parameter type?
+      if (ParmVarDecl *PV = dyn_cast<ParmVarDecl>(D)) {
+        assert(Where == NULL);
+        rewrite(PV, R, N.Replacement);
+      } else if (VarDecl *VD = dyn_cast<VarDecl>(D)) {
+        rewrite(VD, R, N.Replacement, Where, skip, N, toRewrite, A);
+      } else if (FunctionDecl *UD = dyn_cast<FunctionDecl>(D)) {
+        // TODO: If the return type is a fully-specified function pointer, 
+        //       then clang will give back an invalid source range for the 
+        //       return type source range. For now, check that the source
+        //       range is valid. 
+        //       Additionally, a source range can be (mis) identified as 
+        //       spanning multiple files. We don't know how to re-write that,
+        //       so don't.
+          
+        if (N.fullDecl) {
+          SourceRange SR = UD->getSourceRange();
+          SR.setEnd(getFunctionDeclarationEnd(UD, S));
+          
+          if (canRewrite(R, SR))
+            R.ReplaceText(SR, N.Replacement);
+        } else {
+          SourceRange SR = UD->getReturnTypeSourceRange();
+          if (canRewrite(R, SR))
+            R.ReplaceText(SR, N.Replacement);
+        }
+      } else if (FieldDecl *FD = dyn_cast<FieldDecl>(D)) {
+        SourceRange SR = FD->getSourceRange();
+        std::string sRewrite = N.Replacement;
+
+        if (canRewrite(R, SR))
+          R.ReplaceText(SR, sRewrite);
+      }
+
     }
   }
 }
@@ -875,7 +891,8 @@ bool CastPlacementVisitor::VisitCallExpr(CallExpr *E) {
 
   // Walk the parameters and decide if a cast should be inserted. 
   for (unsigned i = 0; i < cDecl->numParams(); i++) {
-    auto declParm = getHighest(cDecl->getParamVar(i), Info);
+    // Need this variable later. 
+    //auto declParm = getHighest(cDecl->getParamVar(i), Info);
     auto defnParm = getHighest(cDefn->getParamVar(i), Info);
     auto sCallParm = Info.getVariable(E->getArg(i), Context, true);
     auto callParm = getHighest(sCallParm, Info);
@@ -886,21 +903,17 @@ bool CastPlacementVisitor::VisitCallExpr(CallExpr *E) {
     // Is callParam < defnParm? Then insert a cast, unless, 
     // callParam >= declParm, in which case leave it alone. 
     if (callParm->isLt(*defnParm, Info)) {
-      errs() << "I should insert a cast\n";
       // Get the type of the destination (defnParm) as a string. 
       std::string castTy = defnParm->mkString(Info.getConstraints().getVariables(), false);
       // Get the new expression. 
-      errs() << "Casting to (" << castTy << ")\n";
       std::string tmp = "";
       raw_string_ostream n(tmp);
       n << "(" << castTy << ")";
       E->getArg(i)->printPretty(n, nullptr, Context->getPrintingPolicy());
       
       // Add a re-write statement. 
-      //rewriteThese.insert 
-    } /*else {
-      errs() << "I should not insert a cast\n";
-    }*/
+      rewriteThese.insert(LAndReplace(E->getArg(i), n.str()));
+    } 
   }
 
   return true;
