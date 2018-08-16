@@ -133,30 +133,42 @@ struct LAndReplace
 {
   Decl        *Declaration; // The declaration to replace.
   DeclStmt    *Statement;   // The DeclStmt, if it exists.
+  Expr        *ExprLoc;     // The expression to replace.
   std::string Replacement;  // The string to replace the declaration with.
   bool        fullDecl;     // If the declaration is a function, true if 
                             // replace the entire declaration or just the 
                             // return declaration.
   LAndReplace() : Declaration(nullptr),
                   Statement(nullptr),
+                  ExprLoc(nullptr),
                   Replacement(""),
                   fullDecl(false) { }
 
   LAndReplace(Decl *D, std::string R) : Declaration(D), 
                                         Statement(nullptr),
+                                        ExprLoc(nullptr),
                                         Replacement(R),
                                         fullDecl(false) {} 
 
   LAndReplace(Decl *D, std::string R, bool F) : Declaration(D), 
                                                 Statement(nullptr),
+                                                ExprLoc(nullptr),
                                                 Replacement(R),
                                                 fullDecl(F) {} 
 
 
   LAndReplace(Decl *D, DeclStmt *S, std::string R) :  Declaration(D),
                                                       Statement(S),
+                                                      ExprLoc(nullptr),
                                                       Replacement(R),
                                                       fullDecl(false) { }
+  
+  LAndReplace(Expr *E, std::string R) : Declaration(nullptr),
+                                        Statement(nullptr),
+                                        ExprLoc(E),
+                                        Replacement(R),
+                                        fullDecl(false) { }
+
 };
 
 SourceLocation 
@@ -210,10 +222,12 @@ struct DComp
   SourceRange getWholeSR(SourceRange orig, LAndReplace dr) const {
     SourceRange newSourceRange(orig);
 
-    if (FunctionDecl *FD = dyn_cast<FunctionDecl>(dr.Declaration)) {
-      newSourceRange.setEnd(getFunctionDeclarationEnd(FD, SM));
-      if (dr.fullDecl == false)
-        newSourceRange = FD->getReturnTypeSourceRange();
+    if (dr.Declaration) {
+      if (FunctionDecl *FD = dyn_cast<FunctionDecl>(dr.Declaration)) {
+        newSourceRange.setEnd(getFunctionDeclarationEnd(FD, SM));
+        if (dr.fullDecl == false)
+          newSourceRange = FD->getReturnTypeSourceRange();
+      } 
     } 
 
     return newSourceRange;
@@ -222,8 +236,18 @@ struct DComp
   bool operator()(const LAndReplace lhs, const LAndReplace rhs) const {
     // Does the source location of the Decl in lhs overlap at all with
     // the source location of rhs?
-    SourceRange srLHS = lhs.Declaration->getSourceRange(); 
-    SourceRange srRHS = rhs.Declaration->getSourceRange();
+    SourceRange srLHS;
+    SourceRange srRHS;
+
+    if (lhs.Declaration)
+      srLHS = lhs.Declaration->getSourceRange();
+    else if (lhs.ExprLoc) 
+      srLHS = lhs.ExprLoc->getSourceRange();
+    
+    if (rhs.Declaration) 
+      srRHS = rhs.Declaration->getSourceRange();
+    else if (rhs.ExprLoc) 
+      srRHS = rhs.ExprLoc->getSourceRange();
 
     // Take into account whether or not a FunctionDeclaration specifies 
     // the "whole" declaration or not. If it does not, it just specifies 
@@ -856,7 +880,7 @@ bool CastPlacementVisitor::VisitCallExpr(CallExpr *E) {
     auto sCallParm = Info.getVariable(E->getArg(i), Context, true);
     auto callParm = getHighest(sCallParm, Info);
 
-    if (callParm->isEmpty())
+    if (callParm == nullptr || callParm->isEmpty())
       continue;
 
     // Is callParam < defnParm? Then insert a cast, unless, 
